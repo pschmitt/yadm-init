@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 
 install_deps() {
-  local packages="yadm git openssh"
   if command -v termux-info >/dev/null 2>&1
   then
-    pkg install -y $packages
+    pkg install -y yadm git openssh
   elif command -v apt >/dev/null 2>&1
   then
     apt update
-    apt install -y $packages
+    apt install -y yadm git openssh-client
   elif command -v pacman >/dev/null 2>&1
   then
-    pacman -Sy --noconfirm $packages
+    pacman -Sy --noconfirm yadm git openssh
   fi
 }
 
