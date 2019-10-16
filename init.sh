@@ -38,9 +38,12 @@ yadm_init() {
     yadm clone --bootstrap ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git
 }
 
-install_deps
-get_ssh_key
-add_trusted_key
-yadm_init
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]
+then
+  install_deps
+  get_ssh_key
+  add_trusted_key
+  yadm_init
+fi
 
 # vim: set et ts=2 sw=2 :
