@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 install_deps() {
-  local packages="yadm git"
+  local packages="yadm git openssh"
   if command -v termux-info >/dev/null 2>&1
   then
     pkg install -y $packages
