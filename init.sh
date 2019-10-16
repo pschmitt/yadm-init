@@ -26,7 +26,7 @@ get_ssh_key() {
 
 yadm_init() {
   GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
-    yadm clone ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git
+    yadm clone --bootstrap ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git
 }
 
 install_deps
