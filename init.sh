@@ -20,7 +20,7 @@ get_ssh_key() {
   cd "$TMPDIR" || exit 9
   git clone "$url"
   mkdir -p ~/.ssh
-  mv .ssh/id_yadm_init* ~/.ssh
+  cp yadm-init/.ssh/id_yadm_init{,.pub} ~/.ssh
   rm -rf yadm-init
 }
 
