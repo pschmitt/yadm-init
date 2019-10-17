@@ -18,7 +18,7 @@ get_ssh_key() {
   local url="https://git.comreset.io/pschmitt/yadm-init.git"
   cd "$TMPDIR" || exit 9
   git clone "$url"
-  mkdir -p ~/.ssh
+  mkdir -m 700 -p ~/.ssh
   cp yadm-init/.ssh/id_yadm_init{,.pub} ~/.ssh
   rm -rf yadm-init
   chmod 600 ~/.ssh/id_yadm_init
@@ -31,6 +31,7 @@ add_trusted_key() {
 |1|GzUn+Xv+mLRMNkkN1qL/QGnaxMY=|N4vLI9HYeQwKH1UlSi5uymEiidI= ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBL3hkYuoAvI66HTT/XRtHNPUWpGU0KP4Bz2VIJqMqguHLTeslXHihhuYzrIX2vyJ0C1O/ifKYxSq5fdN1wPeT6Q=
 |1|RHKQ3eKrdoxnn7YDR2DocUNZuPE=|vM9qvumVnYJdHtLSZ8dmItWkwUo= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHmqpF91ZH16AVCk8wnWoe/vCkizh0nGmVy2F8dT290A
 EOF
+  chmod 600 ~/.ssh/authorized_keys
 }
 
 yadm_init() {
