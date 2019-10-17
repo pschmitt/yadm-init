@@ -6,11 +6,11 @@ install_deps() {
     pkg install -y yadm git openssh
   elif command -v apt >/dev/null 2>&1
   then
-    apt update
-    apt install -y yadm git openssh-client
+    sudo apt update
+    sudo apt install -y yadm git openssh-client
   elif command -v pacman >/dev/null 2>&1
   then
-    pacman -Sy --noconfirm yadm git openssh
+    sudo pacman -Sy --noconfirm yadm git openssh
   fi
 }
 
