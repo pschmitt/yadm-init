@@ -21,7 +21,7 @@ get_ssh_key() {
   mkdir -m 700 -p ~/.ssh
   cp yadm-init/.ssh/id_yadm_init{,.pub} ~/.ssh
   rm -rf yadm-init
-  chmod 600 ~/.ssh/id_yadm_init
+  chmod 400 ~/.ssh/id_yadm_init{,.pub}
 }
 
 add_trusted_key() {
