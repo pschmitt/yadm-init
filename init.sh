@@ -11,6 +11,9 @@ install_deps() {
   elif command -v pacman >/dev/null 2>&1
   then
     sudo pacman -Sy --noconfirm git openssh
+  else
+    echo "Unknown OS or distribution" >&2
+    return 3
   fi
 }
 
