@@ -59,6 +59,8 @@ yadm_cleanup() {
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]
 then
+  set -ex
+
   install_deps
   install_yadm
   get_ssh_key
