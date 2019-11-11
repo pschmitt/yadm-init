@@ -3,15 +3,28 @@
 install_deps() {
   if command -v termux-info >/dev/null 2>&1
   then
-    pkg install -y yadm git openssh
+    pkg install -y git openssh
   elif command -v apt >/dev/null 2>&1
   then
     sudo apt update
-    sudo apt install -y yadm git openssh-client
+    sudo apt install -y git openssh-client
   elif command -v pacman >/dev/null 2>&1
   then
-    sudo pacman -Sy --noconfirm yadm git openssh
+    sudo pacman -Sy --noconfirm git openssh
   fi
+}
+
+__get_tmpdir() {
+  echo "${TMPDIR:-/tmp}/yadm"
+}
+
+install_yadm() {
+  local tmpdir="$(__get_tmpdir)"
+  mkdir -p "$tmpdir"
+  curl -qsfLo "${tmpdir}/yadm" \
+    https://github.com/TheLocehiliosan/yadm/raw/master/yadm
+  chmod a+x "${tmpdir}/yadm"
+  export PATH="${tmpdir}:${PATH}"
 }
 
 get_ssh_key() {
@@ -37,12 +50,21 @@ EOF
 
 yadm_init() {
   GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
-    yadm clone -f --bootstrap ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git
+    bash "$(__get_tmpdir)/yadm" clone -f --bootstrap ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git
 }
 
-install_deps
-get_ssh_key
-add_trusted_key
-yadm_init
+yadm_cleanup() {
+  rm -rf "$(__get_tmpdir)"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]
+then
+  install_deps
+  install_yadm
+  get_ssh_key
+  add_trusted_key
+  yadm_init
+  yadm_cleanup
+fi
 
 # vim: set et ts=2 sw=2 :
