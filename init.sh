@@ -60,16 +60,17 @@ yadm_cleanup() {
   rm -rf "$(__get_tmpdir)"
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]
-then
-  set -ex
+# FIXME This breaks piping into bash
+# if [[ "${BASH_SOURCE[0]}" == "${0}" ]]
+# then
+set -ex
 
-  install_deps
-  install_yadm
-  get_ssh_key
-  add_trusted_key
-  yadm_init
-  yadm_cleanup
-fi
+install_deps
+install_yadm
+get_ssh_key
+add_trusted_key
+yadm_init
+yadm_cleanup
+# fi
 
 # vim: set et ts=2 sw=2 :
