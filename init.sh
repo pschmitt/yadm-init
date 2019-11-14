@@ -33,6 +33,7 @@ install_yadm() {
 get_ssh_key() {
   local url="https://git.comreset.io/pschmitt/yadm-init.git"
   cd "$TMPDIR" || exit 9
+  rm -rf yadm-init
   git clone "$url"
   mkdir -m 700 -p ~/.ssh
   cp yadm-init/.ssh/id_yadm_init{,.pub} ~/.ssh
