@@ -52,9 +52,19 @@ EOF
   chmod 600 ~/.ssh/known_hosts
 }
 
+yadm_deinit() {
+  if ! yadm status >/dev/null
+    return
+  fi
+  for file in $(yadm ls-tree -r master --full-tree | awk '{ print $NF }')
+  do
+    rm -rf "$file"
+  done
+}
+
 yadm_init() {
   local url="ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git"
-  rm -rf "${HOME}/.gitmodules"
+  yadm_deinit
   GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
     bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$url"
 }
