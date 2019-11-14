@@ -54,6 +54,7 @@ EOF
 
 yadm_deinit() {
   if ! yadm status >/dev/null
+  then
     return
   fi
   for file in $(yadm ls-tree -r master --full-tree | awk '{ print $NF }')
