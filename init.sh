@@ -36,7 +36,7 @@ get_ssh_key() {
   rm -rf yadm-init
   git clone "$url"
   mkdir -m 700 -p ~/.ssh
-  cp yadm-init/.ssh/id_yadm_init{,.pub} ~/.ssh
+  cp -fv yadm-init/.ssh/id_yadm_init{,.pub} "${HOME}/.ssh"
   rm -rf yadm-init
   chmod 400 ~/.ssh/id_yadm_init{,.pub}
 }
