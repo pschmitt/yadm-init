@@ -53,8 +53,10 @@ EOF
 }
 
 yadm_init() {
+  local url="ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git"
+  rm -rf "${HOME}/.gitmodules"
   GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
-    bash "$(__get_tmpdir)/yadm" clone -f --bootstrap ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git
+    bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$url"
 }
 
 yadm_cleanup() {
