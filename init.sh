@@ -8,6 +8,9 @@ install_deps() {
   then
     sudo apt update
     sudo apt install -y git openssh-client
+  elif command -v dnf >/dev/null
+  then
+    sudo dnf install -y git openssh-clients
   elif command -v pacman >/dev/null 2>&1
   then
     sudo pacman -Sy --noconfirm git openssh
