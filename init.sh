@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
 
+usage() {
+  echo "Usage: $(basename "$0") [--local DIR]"
+}
+
 install_deps() {
-  if command -v termux-info >/dev/null 2>&1
+  if command -v termux-info >/dev/null
   then
     pkg install -y git openssh
-  elif command -v apt >/dev/null 2>&1
+  elif command -v apt >/dev/null
   then
     sudo apt update
     sudo apt install -y git openssh-client
   elif command -v dnf >/dev/null
   then
     sudo dnf install -y git openssh-clients
-  elif command -v pacman >/dev/null 2>&1
+  elif command -v pacman >/dev/null
   then
     sudo pacman -Sy --noconfirm git openssh
+  elif uname -s | grep -q CYGWIN_NT
+  then
+    cygwin_install_apt-cyg
+    cygwin_install_pkg git openssh zsh
   else
     echo "Unknown OS or distribution" >&2
     return 3
@@ -24,8 +32,46 @@ __get_tmpdir() {
   echo "${TMPDIR:-/tmp}/yadm"
 }
 
+cygwin_get_installed_pkgs() {
+  apt-cyg show | grep -v 'The following packages are installed:' | awk '{ print $1 }'
+}
+
+cygwin_install_apt-cyg() {
+  if command -v apt-cyg >/dev/null
+  then
+    return
+  fi
+  curl -qs -L -o /usr/bin/apt-cyg \
+    https://raw.githubusercontent.com/kou1okada/apt-cyg/master/apt-cyg
+  chmod +x /usr/bin/apt-cyg
+}
+
+cygwin_install_pkg() {
+  local packages=("$@")
+  local pkg pkg_list to_install=()
+
+  # Check if the packages are already installed
+  # Background: The install takes ages..! Let's avoid waiting forever for
+  # apt-cyg to re-install existing packages.
+  pkg_list="$(cygwin_get_installed_pkgs)"
+  for pkg in "${packages[@]}"
+  do
+    if ! grep -Eq "^$pkg\$" <<< "$pkg_list"
+    then
+      to_install+=("$pkg")
+    fi
+  done
+
+  # Install packages if there is something to install
+  if [[ "${#to_install[@]}" -gt 0 ]]
+  then
+    apt-cyg install "${to_install[@]}"
+  fi
+}
+
 install_yadm() {
-  local tmpdir="$(__get_tmpdir)"
+  local tmpdir
+  tmpdir="$(__get_tmpdir)"
   mkdir -p "$tmpdir"
   curl -qsfLo "${tmpdir}/yadm" \
     https://github.com/TheLocehiliosan/yadm/raw/master/yadm
@@ -35,13 +81,17 @@ install_yadm() {
 
 get_ssh_key() {
   local url="https://git.comreset.io/pschmitt/yadm-init.git"
+  local alt_url="git@github.com:pschmitt/yadm-init.git"
   cd "$TMPDIR" || exit 9
   rm -rf yadm-init
-  git clone "$url"
-  mkdir -m 700 -p ~/.ssh
+  if ! git clone "$url"
+  then
+    git clone "$alt_url"
+  fi
+  mkdir -m 700 -p "${HOME}/.ssh"
   cp -fv yadm-init/.ssh/id_yadm_init{,.pub} "${HOME}/.ssh"
   rm -rf yadm-init
-  chmod 400 ~/.ssh/id_yadm_init{,.pub}
+  chmod 400 "${HOME}"/.ssh/id_yadm_init{,.pub}
 }
 
 add_trusted_key() {
@@ -68,9 +118,15 @@ yadm_deinit() {
 
 yadm_init() {
   local url="ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git"
+  local alt_url="git@github.com:pschmitt/yadm-config.git"
   yadm_deinit
-  GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
+  if [[ -n "$LOCAL_REPO" ]]
+  then
+    bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$LOCAL_REPO"
+  else
+    GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
     bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$url"
+  fi
 }
 
 yadm_cleanup() {
@@ -82,9 +138,23 @@ yadm_cleanup() {
 # then
 set -ex
 
+case "$1" in
+  local|--local|-l|l|-L)
+    if [[ -z "$2" ]]
+    then
+      usage
+      exit 2
+    fi
+    LOCAL_REPO="$2"
+    ;;
+esac
+
 install_deps
 install_yadm
-get_ssh_key
+if [[ -z "$LOCAL_REPO" ]]
+then
+  get_ssh_key
+fi
 add_trusted_key
 yadm_init
 yadm_cleanup
