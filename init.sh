@@ -33,7 +33,9 @@ __get_tmpdir() {
 }
 
 cygwin_get_installed_pkgs() {
-  apt-cyg show | grep -v 'The following packages are installed:' | awk '{ print $1 }'
+  awk '{ print $1 }' /etc/setup/installed.db
+  # Alternative (SLOW)
+  # apt-cyg show | grep -v 'The following packages are installed:' | awk '{ print $1 }'
 }
 
 cygwin_install_apt-cyg() {
