@@ -82,8 +82,8 @@ install_yadm() {
 }
 
 get_ssh_key() {
-  local url="https://git.comreset.io/pschmitt/yadm-init.git"
-  local alt_url="git@github.com:pschmitt/yadm-init.git"
+  local url="https://github.com/pschmitt/yadm-init.git"
+  local alt_url="https://git.comreset.io/pschmitt/yadm-init.git"
   cd "$TMPDIR" || exit 9
   rm -rf yadm-init
   if ! git clone "$url"
@@ -103,6 +103,7 @@ add_trusted_key() {
 tWCGrh67+/vqgI4wUoXPieEUHgisKWXQgOwpzzSKK+4Eeq0ekr2uds0zlbzIuPD9xN4EltiuYspPnGbx1zxznGoMBNn5vI/lHrjXXrb5U6CHnWRpFSN+u26zqkEu4DLfmrMHdnduJwfSxSYKQfhoAjiL79yI1DQPm/UHCAuJLhLxS/QAmb2n1yy7OWaT6V
 [git.comreset.io]:2022 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBB0pGWBFLVTfT+4Uo5X/+/PIXrz81MK0HfLJTrE7PAGTXF9SKMtnOXKezP5alvGjMA34w9vWSeSzbp9vmm4QJGk=
 [git.comreset.io]:2022 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL1uwv8wPaet+akmf9nFh4PnDiUjPR62SJYtH2OUXXbB
+github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==
 EOF
   chmod 600 ~/.ssh/known_hosts
 }
@@ -119,15 +120,18 @@ yadm_deinit() {
 }
 
 yadm_init() {
-  local url="ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git"
-  local alt_url="git@github.com:pschmitt/yadm-config.git"
-  yadm_deinit
+  local url="git@github.com:pschmitt/yadm-config.git"
+  local alt_url="ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git"
   if [[ -n "$LOCAL_REPO" ]]
   then
     bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$LOCAL_REPO"
   else
-    GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
-    bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$url"
+    if ! GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
+      bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$url"
+    then
+      GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
+        bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$alt_url"
+    fi
   fi
 }
 
