@@ -136,6 +136,7 @@ yadm_init() {
     "git@github.com:pschmitt/yadm-config.git"
     "ssh://git@ssh.github.com:443/pschmitt/yadm-config.git"
     "ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git"
+    "https://github.com/pschmitt/yadm-config.git"
   )
 
   if [[ -n "$LOCAL_REPO" ]]
