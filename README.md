@@ -1,5 +1,5 @@
 # Usage
 
 ```
-curl -L yadm.comreset.io | bash
+curl -L http://bit.ly/yasetup | bash
 ```
