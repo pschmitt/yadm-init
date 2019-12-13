@@ -146,7 +146,7 @@ yadm_init() {
     for url in "${urls[@]}"
     do
       if GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
-        bash "$(__get_tmpdir)/yadm" clone -f "$url"
+        bash "$(__get_tmpdir)/yadm" clone -f --no-bootstrap "$url"
       then
         "${HOME}/.config/yadm/bootstrap"
         break
