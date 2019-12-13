@@ -84,12 +84,15 @@ install_yadm() {
 get_ssh_key() {
   local url="https://github.com/pschmitt/yadm-init.git"
   local alt_url="https://git.comreset.io/pschmitt/yadm-init.git"
+
   cd "$TMPDIR" || exit 9
   rm -rf yadm-init
+
   if ! git clone "$url"
   then
     git clone "$alt_url"
   fi
+
   mkdir -m 700 -p "${HOME}/.ssh"
   cp -fv yadm-init/.ssh/id_yadm_init{,.pub} "${HOME}/.ssh"
   rm -rf yadm-init
@@ -122,6 +125,7 @@ yadm_deinit() {
 yadm_init() {
   local url="git@github.com:pschmitt/yadm-config.git"
   local alt_url="ssh://git@git.comreset.io:2022/pschmitt/yadm-config.git"
+
   if [[ -n "$LOCAL_REPO" ]]
   then
     bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$LOCAL_REPO"
@@ -162,6 +166,7 @@ then
   get_ssh_key
 fi
 add_trusted_key
+yadm_deinit
 yadm_init
 yadm_cleanup
 # fi
