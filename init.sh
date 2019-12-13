@@ -120,10 +120,16 @@ EOF
 }
 
 yadm_deinit() {
+  local file
   if ! yadm status >/dev/null
   then
     return
   fi
+  # Delete submodules
+  # Disable check since we want to expand $(pwd) at "runtime"
+  # shellcheck disable=2016
+  yadm submodule foreach 'rm -rf $(pwd)'
+  # Delete tracked files
   for file in $(yadm ls-tree -r master --full-tree | awk '{ print $NF }')
   do
     rm -rf "$file"
