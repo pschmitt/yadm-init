@@ -134,6 +134,7 @@ yadm_deinit() {
   do
     rm -rf "$file"
   done
+  rm -rf "${HOME}/.config/yadm" "${HOME}/.gitmodules"
 }
 
 yadm_init() {
