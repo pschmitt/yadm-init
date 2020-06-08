@@ -18,6 +18,10 @@ install_deps() {
   elif command -v pacman >/dev/null
   then
     sudo pacman -Sy --noconfirm git openssh
+  elif command -v apk >/dev/null
+  then
+    sudo apk update
+    sudo apk add git openssh-client
   elif uname -s | grep -q CYGWIN_NT
   then
     cygwin_install_apt-cyg
