@@ -107,6 +107,12 @@ get_ssh_key() {
   cp -fv yadm-init/.ssh/id_yadm_init{,.pub} "${HOME}/.ssh"
   rm -rf yadm-init
   chmod 400 "${HOME}"/.ssh/id_yadm_init{,.pub}
+
+  # Add key to agent to avoid being prompted multiple times
+  if command -v ssh-add >/dev/null
+  then
+    ssh-add "${HOME}/.ssh/id_yadm_init"
+  fi
 }
 
 add_trusted_key() {
