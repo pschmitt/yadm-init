@@ -111,6 +111,10 @@ get_ssh_key() {
   # Add key to agent to avoid being prompted multiple times
   if command -v ssh-add >/dev/null
   then
+    if [[ -z "$SSH_AGENT_PID" ]]
+    then
+      eval "$(ssh-agent)"
+    fi
     ssh-add "${HOME}/.ssh/id_yadm_init"
   fi
 }
