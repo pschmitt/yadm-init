@@ -135,13 +135,19 @@ EOF
 
 yadm_deinit() {
   local file
+  if ! command -v yadm >/dev/null || ! yadm status >/dev/null
+  then
+    return
+  fi
   # Delete submodules
   # Disable check since we want to expand $(pwd) at "runtime"
   # shellcheck disable=2016
   yadm submodule foreach 'rm -rf $(pwd)' || true
   # Delete tracked files
-  # FIXME Determine branch name at runtime
-  for file in $(yadm ls-tree -r master --full-tree | awk '{ print $NF }')
+  local branch
+  branch=$(yadm branch --show-current)
+
+  for file in $(yadm ls-tree -r "$branch" --full-tree | awk '{ print $NF }')
   do
     rm -rf "$file"
   done
@@ -193,12 +199,13 @@ case "$1" in
     ;;
 esac
 
-install_deps
-install_yadm
+# Ask for passphrase
 if [[ -z "$LOCAL_REPO" ]]
 then
   get_ssh_key
 fi
+install_deps
+install_yadm
 add_trusted_key
 yadm_deinit
 yadm_init
