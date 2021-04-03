@@ -108,6 +108,7 @@ get_ssh_key() {
     "https://github.com/pschmitt/yadm-init.git"
     "https://git.comreset.io/pschmitt/yadm-init.git"
   )
+  local PASSPHRASE="${1:-$PASSPHRASE}"
 
   cd "$TMPDIR" || exit 9
   rm -rf yadm-init
@@ -134,17 +135,18 @@ get_ssh_key() {
       eval "$(ssh-agent)"
     fi
 
+    local ssh_key="${HOME}/.ssh/id_yadm_init"
     if [[ -n "$PASSPHRASE" ]]
     then
       if ! timeout 10 \
         sshpass -p "$PASSPHRASE" -P "Enter passphrase" \
-        ssh-add "${HOME}/.ssh/id_yadm_init"
+          ssh-add "$ssh_key"
       then
         echo "Invalid passphrase. Please correct." >&2
-        ssh-add "${HOME}/.ssh/id_yadm_init"
+        ssh-add "$ssh_key"
       fi
     else
-      ssh-add "${HOME}/.ssh/id_yadm_init"
+      ssh-add "$ssh_key"
     fi
   fi
 }
@@ -252,7 +254,7 @@ then
 
   if [[ -z "$LOCAL_REPO" ]]
   then
-    get_ssh_key
+    get_ssh_key "$PASSPHRASE"
   fi
 
   add_trusted_key
