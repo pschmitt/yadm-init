@@ -166,23 +166,33 @@ EOF
 }
 
 yadm_deinit() {
-  local file
-  if ! command -v yadm >/dev/null || ! yadm status >/dev/null
+  if ! command -v yadm >/dev/null
   then
     return
   fi
-  # Delete submodules
-  # Disable check since we want to expand $(pwd) at "runtime"
-  # shellcheck disable=2016
-  yadm submodule foreach 'rm -rf $(pwd)' || true
+
   # Delete tracked files
   local branch
-  branch=$(yadm branch --show-current)
+  local file
+  branch=$(yadm branch --show-current || true)
 
-  for file in $(yadm ls-tree -r "$branch" --full-tree | awk '{ print $NF }')
-  do
-    rm -rf "$file"
-  done
+  if [[ -n "$branch" ]]
+  then
+    for file in $(yadm ls-tree -r "$branch" --full-tree | awk '{ print $NF }')
+    do
+      rm -rf "$file"
+    done
+
+    # Delete submodules
+    # Disable check since we want to expand $(pwd) at "runtime"
+    # shellcheck disable=2016
+    # FIXME Why is the below command leaving us with broken submodules that
+    # cannot be cloned over?
+    # yadm submodule foreach 'rm -rf $(pwd)' || true
+    awk "/^\s*path\s*=/ { print \"${HOME}/\" \$3 }" \
+      "${HOME}/.gitmodules" | xargs rm -rfv
+  fi
+
   rm -rf "${HOME}/.local/share/yadm" "${HOME}/.gitmodules"
 }
 
