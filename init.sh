@@ -9,9 +9,9 @@ query_passphrase() {
 
   if [[ "$SHELL" =~ zsh ]]
   then
-    read -rs "secret?Passphrase: "
+    read -rs "secret?Passphrase: " < /dev/tty
   else
-    read -rs -p "Passphrase: " secret
+    read -rs -p "Passphrase: " secret < /dev/tty
   fi
 
   if [[ -z "$secret" ]]
@@ -136,8 +136,13 @@ get_ssh_key() {
 
     if [[ -n "$PASSPHRASE" ]]
     then
-      sshpass -p "$PASSPHRASE" -P "Enter passphrase" \
+      if ! timeout 10 \
+        sshpass -p "$PASSPHRASE" -P "Enter passphrase" \
         ssh-add "${HOME}/.ssh/id_yadm_init"
+      then
+        echo "Invalid passphrase. Please correct." >&2
+        ssh-add "${HOME}/.ssh/id_yadm_init"
+      fi
     else
       ssh-add "${HOME}/.ssh/id_yadm_init"
     fi
