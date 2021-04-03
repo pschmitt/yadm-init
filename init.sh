@@ -1,31 +1,49 @@
 #!/usr/bin/env bash
 
 usage() {
-  echo "Usage: $(basename "$0") [--local DIR]"
+  echo "Usage: $(basename "$0") [--local DIR] [PASSPHRASE]"
+}
+
+query_passphrase() {
+  local secret
+
+  if [[ "$SHELL" =~ zsh ]]
+  then
+    read -rs "secret?Passphrase: "
+  else
+    read -rs -p "Passphrase: " secret
+  fi
+
+  if [[ -z "$secret" ]]
+  then
+    return 1
+  fi
+
+  echo "$secret"
 }
 
 install_deps() {
   if command -v termux-info >/dev/null
   then
-    pkg install -y git openssh
+    pkg install -y curl git openssh sshpass
   elif command -v apt >/dev/null
   then
     sudo apt update
-    sudo apt install -y git openssh-client
+    sudo apt install -y curl git openssh-client sshpass
   elif command -v dnf >/dev/null
   then
-    sudo dnf install -y git openssh-clients
+    sudo dnf install -y curl git openssh-clients sshpass
   elif command -v pacman >/dev/null
   then
-    sudo pacman -Sy --noconfirm git openssh
+    sudo pacman -Sy --noconfirm curl git openssh sshpass
   elif command -v apk >/dev/null
   then
     sudo apk update
-    sudo apk add git openssh-client
+    sudo apk add git curl openssh-client sshpass
   elif uname -s | grep -q CYGWIN_NT
   then
     cygwin_install_apt-cyg
-    cygwin_install_pkg git openssh zsh
+    cygwin_install_pkg curl git openssh zsh sshpass
   else
     echo "Unknown OS or distribution" >&2
     return 3
@@ -115,7 +133,14 @@ get_ssh_key() {
     then
       eval "$(ssh-agent)"
     fi
-    ssh-add "${HOME}/.ssh/id_yadm_init"
+
+    if [[ -n "$PASSPHRASE" ]]
+    then
+      sshpass -p "$PASSPHRASE" -P "Enter passphrase" \
+        ssh-add "${HOME}/.ssh/id_yadm_init"
+    else
+      ssh-add "${HOME}/.ssh/id_yadm_init"
+    fi
   fi
 }
 
@@ -183,33 +208,52 @@ yadm_cleanup() {
   rm -rf "$(__get_tmpdir)"
 }
 
-# FIXME This breaks piping into bash
-# if [[ "${BASH_SOURCE[0]}" == "${0}" ]]
-# then
-set -ex
-
-case "$1" in
-  local|--local|-l|l|-L)
-    if [[ -z "$2" ]]
-    then
-      usage
-      exit 2
-    fi
-    LOCAL_REPO="$2"
-    ;;
-esac
-
-# Ask for passphrase
-if [[ -z "$LOCAL_REPO" ]]
+# https://stackoverflow.com/a/28776166/1872036
+if ! (return 2>/dev/null)
 then
-  get_ssh_key
+  set -ex
+
+  LOCAL_REPO="${LOCAL_REPO}"
+  PASSPHRASE="${PASSPHRASE}"
+
+  while [[ -n "$*" ]]
+  do
+    case "$1" in
+      local|--local|-l|l|-L)
+        if [[ -z "$2" ]]
+        then
+          usage
+          exit 2
+        fi
+        LOCAL_REPO="$2"
+        shift 2
+        ;;
+      *)
+        PASSPHRASE="$1"
+        shift
+        break
+        ;;
+    esac
+  done
+
+  # Ask for passphrase if not already provided
+  if [[ -z "$PASSPHRASE" ]]
+  then
+    PASSPHRASE=$(query_passphrase)
+  fi
+
+  install_deps
+  install_yadm
+
+  if [[ -z "$LOCAL_REPO" ]]
+  then
+    get_ssh_key
+  fi
+
+  add_trusted_key
+  yadm_deinit
+  yadm_init
+  yadm_cleanup
 fi
-install_deps
-install_yadm
-add_trusted_key
-yadm_deinit
-yadm_init
-yadm_cleanup
-# fi
 
 # vim: set et ts=2 sw=2 :
