@@ -36,7 +36,7 @@ install_deps() {
     sudo dnf install -y curl git openssh-clients sshpass
   elif command -v pacman >/dev/null
   then
-    sudo pacman -Sy --noconfirm curl git openssh sshpass openssh-askpass
+    sudo pacman -Sy --noconfirm curl git openssh sshpass x11-ssh-askpass
   elif command -v apk >/dev/null
   then
     sudo apk update
