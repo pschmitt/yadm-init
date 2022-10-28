@@ -229,10 +229,9 @@ yadm_cleanup() {
 # https://stackoverflow.com/a/28776166/1872036
 if ! (return 2>/dev/null)
 then
-  set -ex
+  set -e
 
-  LOCAL_REPO="${LOCAL_REPO}"
-  PASSPHRASE="${PASSPHRASE}"
+  cd "$HOME" || return 9
 
   while [[ -n "$*" ]]
   do
