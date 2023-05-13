@@ -25,7 +25,7 @@ query_passphrase() {
 install_deps() {
   if command -v termux-info >/dev/null
   then
-    pkg upgrade -y -o Dpkg::Options::="--force-confnew"
+    yes | pkg upgrade -y
     pkg install -y curl git openssh sshpass
   elif command -v apt >/dev/null
   then
