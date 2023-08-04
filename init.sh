@@ -7,7 +7,7 @@ usage() {
 query_passphrase() {
   local secret
 
-  if [[ "$SHELL" =~ zsh ]]
+  if [[ -n "$ZSH_VERSION" ]]
   then
     read -rs "secret?Passphrase: " < /dev/tty
   else
