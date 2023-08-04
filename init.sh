@@ -41,6 +41,9 @@ install_deps() {
   then
     sudo apk update
     sudo apk add git curl openssh-client sshpass
+  elif command -v nixos-help >/dev/null
+  then
+    nix-env -iA nixos.curl nixos.git nixos.openssh nixos.sshpass
   elif uname -s | grep -q CYGWIN_NT
   then
     cygwin_install_apt-cyg
