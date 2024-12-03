@@ -126,6 +126,7 @@ get_ssh_key() {
     fi
   done
 
+  # shellcheck disable=SC2174
   mkdir -m 700 -p "${HOME}/.ssh"
   cp -fv yadm-init/.ssh/id_yadm_init{,.pub} "${HOME}/.ssh"
   rm -rf yadm-init
