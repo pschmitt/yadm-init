@@ -1,5 +1,5 @@
 # Usage
 
 ```
-curl -L http://bit.ly/yasetup | bash
+curl -L http://y.brkn.lol | bash
 ```
