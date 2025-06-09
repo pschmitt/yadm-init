@@ -110,7 +110,7 @@ install_yadm() {
 get_ssh_key() {
   local urls=(
     "https://github.com/pschmitt/yadm-init.git"
-    "https://git.heimat.dev/pschmitt/yadm-init.git"
+    "https://git.brkn.lol/pschmitt/yadm-init.git"
   )
   local PASSPHRASE="${1:-$PASSPHRASE}"
 
@@ -209,7 +209,7 @@ yadm_init() {
   local urls=(
     "git@github.com:pschmitt/yadm-config.git"
     "ssh://git@ssh.github.com:443/pschmitt/yadm-config.git"
-    "ssh://git@git.heimat.dev:2022/pschmitt/yadm-config.git"
+    "ssh://git@git.brkn.lol:2022/pschmitt/yadm-config.git"
     "https://github.com/pschmitt/yadm-config.git"
   )
 

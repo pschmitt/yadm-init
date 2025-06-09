@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-curl -L yadm.heimat.dev | bash -x
+curl -L yadm.brkn.lol | bash -x
