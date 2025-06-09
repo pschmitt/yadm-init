@@ -1,5 +1,5 @@
 # Usage
 
 ```
-curl -L http://y.brkn.lol | bash
+curl -fsSL y.brkn.lol | bash
 ```
