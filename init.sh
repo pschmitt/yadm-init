@@ -115,7 +115,7 @@ get_ssh_key() {
   )
   local PASSPHRASE="${1:-$PASSPHRASE}"
 
-  cd "$TMPDIR" || exit 9
+  cd "${TMPDIR:-/tmp}" || exit 9
   rm -rf yadm-init
 
   # Attempt to clone
