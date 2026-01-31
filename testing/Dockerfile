@@ -1,4 +1,4 @@
-FROM ubuntu:19.10
+FROM ubuntu:eoan-20200608
 
 RUN apt-get update && \
     apt-get install -y sudo curl && \
