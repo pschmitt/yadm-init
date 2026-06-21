@@ -210,7 +210,7 @@ yadm_init() {
   local urls=(
     "git@github.com:pschmitt/yadm-config.git"
     "ssh://git@ssh.github.com:443/pschmitt/yadm-config.git"
-    "ssh://git@git.brkn.lol:2022/pschmitt/yadm-config.git"
+    "ssh://git@git.brkn.lol/pschmitt/yadm-config.git"
     "https://github.com/pschmitt/yadm-config.git"
   )
 
