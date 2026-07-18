@@ -27,25 +27,47 @@ query_secret() {
   echo "$secret"
 }
 
+# Runs a command with its output hidden, so setup doesn't drown in raw
+# apt/pkg noise -- but the output is still shown (and the log kept) if the
+# command actually fails, so it stays debuggable.
+run_quiet() {
+  local desc="$1"
+  local log
+  shift
+
+  log="$(mktemp)"
+  echo "${desc}..." >&2
+
+  if ! "$@" >"$log" 2>&1
+  then
+    echo "Failed: ${desc}" >&2
+    cat "$log" >&2
+    rm -f "$log"
+    return 1
+  fi
+
+  rm -f "$log"
+}
+
 install_deps() {
   if command -v termux-info >/dev/null
   then
-    yes | pkg upgrade -y
-    pkg install -y curl git openssh pinentry
+    run_quiet "Upgrading packages" bash -c 'yes | pkg upgrade -y'
+    run_quiet "Installing dependencies" pkg install -y curl git openssh pinentry
   elif command -v apt >/dev/null
   then
-    sudo apt update
-    sudo apt install -y curl git openssh-client pinentry
+    run_quiet "Updating package lists" sudo apt update
+    run_quiet "Installing dependencies" sudo apt install -y curl git openssh-client pinentry
   elif command -v dnf >/dev/null
   then
-    sudo dnf install -y curl git openssh-clients pinentry
+    run_quiet "Installing dependencies" sudo dnf install -y curl git openssh-clients pinentry
   elif command -v pacman >/dev/null
   then
-    sudo pacman -Sy --noconfirm curl git openssh x11-ssh-askpass pinentry
+    run_quiet "Installing dependencies" sudo pacman -Sy --noconfirm curl git openssh x11-ssh-askpass pinentry
   elif command -v apk >/dev/null
   then
-    sudo apk update
-    sudo apk add git curl openssh-client pinentry
+    run_quiet "Updating package lists" sudo apk update
+    run_quiet "Installing dependencies" sudo apk add git curl openssh-client pinentry
   elif command -v nixos-help >/dev/null
   then
     echo "Pro user detected: nixos"
