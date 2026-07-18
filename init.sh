@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 
 usage() {
-  echo "Usage: $(basename "$0") [--local DIR] [PASSPHRASE]"
+  echo "Usage: $(basename "$0") [--local DIR] [--host NAME] [BW_PASSWORD]"
 }
 
-query_passphrase() {
+query_secret() {
+  local prompt="$1"
   local secret
 
   if [[ -n "$ZSH_VERSION" ]]
   then
-    read -rs "secret?Passphrase: " < /dev/tty
+    read -rs "secret?${prompt}: " < /dev/tty
   else
-    read -rs -p "Passphrase: " secret < /dev/tty
+    read -rs -p "${prompt}: " secret < /dev/tty
   fi
 
   if [[ -z "$secret" ]]
@@ -108,12 +109,90 @@ install_yadm() {
   export PATH="${tmpdir}:${PATH}"
 }
 
+# Picks the prebuilt rbw release target for this platform, or nothing if
+# there isn't one (caller decides whether that's fatal).
+__rbw_release_target() {
+  if command -v termux-info >/dev/null
+  then
+    echo "aarch64-linux-android"
+    return 0
+  fi
+
+  case "$(uname -m)" in
+    x86_64)
+      echo "x86_64-unknown-linux-musl"
+      ;;
+  esac
+}
+
+# rbw is the secret store for everything this script needs (the yadm-init
+# deploy key passphrase, this host's personal SSH key, and later the GPG
+# import in the yadm bootstrap step). Skip the download if it's already on
+# PATH -- e.g. NixOS hosts get it from home-manager instead.
+install_rbw() {
+  local tmpdir target tag version url
+
+  if command -v rbw >/dev/null
+  then
+    return 0
+  fi
+
+  target="$(__rbw_release_target)"
+  if [[ -z "$target" ]]
+  then
+    echo "No prebuilt rbw binary for $(uname -m), skipping rbw install" >&2
+    return 1
+  fi
+
+  tmpdir="$(__get_tmpdir)"
+  mkdir -p "$tmpdir"
+
+  tag="$(curl -sI "https://github.com/pschmitt/rbw/releases/latest" |
+    awk -F/ '/^[Ll]ocation:/ { print $NF }' | tr -d '\r')"
+  if [[ -z "$tag" ]]
+  then
+    echo "Failed to resolve the latest rbw release" >&2
+    return 1
+  fi
+  version="${tag#v}"
+  url="https://github.com/pschmitt/rbw/releases/download/${tag}/rbw-${version}-${target}.tar.gz"
+
+  curl -qsfL -o "${tmpdir}/rbw.tar.gz" "$url" || return 1
+  tar -xzf "${tmpdir}/rbw.tar.gz" -C "$tmpdir"
+  cp -f "${tmpdir}/rbw-${version}-${target}/rbw" "${tmpdir}/rbw"
+  cp -f "${tmpdir}/rbw-${version}-${target}/rbw-agent" "${tmpdir}/rbw-agent"
+  chmod a+x "${tmpdir}/rbw" "${tmpdir}/rbw-agent"
+  export PATH="${tmpdir}:${PATH}"
+}
+
+# Logs in and unlocks the primary rbw account non-interactively. Needed once
+# per bootstrap run; the agent then stays unlocked for the rest of it
+# (including the later GPG import in the yadm bootstrap step).
+unlock_rbw() {
+  local password="$1"
+  local totp="$2"
+
+  rbw config set email "${RBW_EMAIL:-philipp@schmitt.co}"
+
+  if ! echo "$password" | rbw unlock --stdin --totp "$totp"
+  then
+    echo "Failed to unlock the Bitwarden vault" >&2
+    return 1
+  fi
+}
+
+# The yadm-init deploy key's passphrase, stored as a Bitwarden item so
+# nothing needs to be typed for it anymore.
+get_yadm_init_ssh_passphrase() {
+  rbw get "${RBW_YADM_INIT_ITEM:-yadm-init-deploy-key}" 2>/dev/null
+}
+
 get_ssh_key() {
   local urls=(
     "https://github.com/pschmitt/yadm-init.git"
     "https://git.brkn.lol/pschmitt/yadm-init.git"
   )
-  local PASSPHRASE="${1:-$PASSPHRASE}"
+  local passphrase
 
   cd "${TMPDIR:-/tmp}" || exit 9
   rm -rf yadm-init
@@ -133,6 +212,8 @@ get_ssh_key() {
   rm -rf yadm-init
   chmod 400 "${HOME}"/.ssh/id_yadm_init{,.pub}
 
+  passphrase="$(get_yadm_init_ssh_passphrase)"
+
   # Add key to agent to avoid being prompted multiple times
   if command -v ssh-add >/dev/null
   then
@@ -142,19 +223,55 @@ get_ssh_key() {
     fi
 
     local ssh_key="${HOME}/.ssh/id_yadm_init"
-    if [[ -n "$PASSPHRASE" ]]
+    if [[ -n "$passphrase" ]]
     then
       if ! timeout 10 \
-        sshpass -p "$PASSPHRASE" -P "Enter passphrase" \
+        sshpass -p "$passphrase" -P "Enter passphrase" \
           ssh-add "$ssh_key"
       then
-        echo "Invalid passphrase. Please correct." >&2
+        echo "Invalid passphrase from Bitwarden. Please correct." >&2
         ssh-add "$ssh_key"
       fi
     else
       ssh-add "$ssh_key"
     fi
   fi
+}
+
+# Fetches this host's own personal SSH key from Bitwarden (item
+# "pschmitt@<host>"), if one exists. A host that's never been enrolled
+# before won't have one yet -- that's fine, the ansible ssh.yml role
+# generates a fresh key in that case, same as before this existed.
+get_host_ssh_key() {
+  local host="$1"
+  local name
+
+  if [[ -z "$host" ]]
+  then
+    echo "No --host given, skipping personal SSH key fetch from Bitwarden" >&2
+    return 0
+  fi
+
+  if [[ -f "${HOME}/.ssh/id_ed25519" ]]
+  then
+    echo "${HOME}/.ssh/id_ed25519 already present, skipping Bitwarden fetch"
+    return 0
+  fi
+
+  name="pschmitt@${host}"
+  if ! rbw get "$name" >/dev/null 2>&1
+  then
+    echo "No '${name}' SSH key in Bitwarden -- a new one will be generated" >&2
+    return 0
+  fi
+
+  # shellcheck disable=SC2174
+  mkdir -m 700 -p "${HOME}/.ssh"
+  rbw get "$name" -f private_key > "${HOME}/.ssh/id_ed25519"
+  rbw get "$name" -f public_key > "${HOME}/.ssh/id_ed25519.pub"
+  chmod 600 "${HOME}/.ssh/id_ed25519"
+  chmod 644 "${HOME}/.ssh/id_ed25519.pub"
+  echo "Fetched SSH key '${name}' from Bitwarden"
 }
 
 add_trusted_key() {
@@ -253,26 +370,46 @@ then
         LOCAL_REPO="$2"
         shift 2
         ;;
+      host|--host|-H)
+        if [[ -z "$2" ]]
+        then
+          usage
+          exit 2
+        fi
+        YADM_HOST="$2"
+        shift 2
+        ;;
       *)
-        PASSPHRASE="$1"
+        RBW_MASTER_PASSWORD="$1"
         shift
         break
         ;;
     esac
   done
 
-  # Ask for passphrase if not already provided
-  if [[ -z "$PASSPHRASE" ]]
-  then
-    PASSPHRASE=$(query_passphrase)
-  fi
-
   install_deps
   install_yadm
 
   if [[ -z "$LOCAL_REPO" ]]
   then
-    get_ssh_key "$PASSPHRASE"
+    install_rbw
+
+    # Ask for the Bitwarden password/TOTP if not already provided. rbw is
+    # now the secret store for the yadm-init deploy key passphrase, this
+    # host's personal SSH key, and (later, in the yadm bootstrap step) the
+    # GPG key -- one unlock covers all of it.
+    if [[ -z "$RBW_MASTER_PASSWORD" ]]
+    then
+      RBW_MASTER_PASSWORD=$(query_secret "Bitwarden password")
+    fi
+    if [[ -z "$RBW_TOTP" ]]
+    then
+      RBW_TOTP=$(query_secret "Bitwarden TOTP code (blank if none)") || true
+    fi
+
+    unlock_rbw "$RBW_MASTER_PASSWORD" "$RBW_TOTP"
+    get_ssh_key
+    get_host_ssh_key "$YADM_HOST"
   fi
 
   add_trusted_key
