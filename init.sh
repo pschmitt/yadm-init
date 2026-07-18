@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
 
 usage() {
-  echo "Usage: $(basename "$0") [--local DIR] [--host NAME]"
+  echo "Usage: $(basename "$0") [--local DIR] [--host NAME] [BW_PASSWORD]"
+}
+
+# Bash's own `read` builtin, not pinentry -- see unlock_rbw for why.
+query_secret() {
+  local prompt="$1"
+  local secret
+
+  if [[ -n "$ZSH_VERSION" ]]
+  then
+    read -rs "secret?${prompt}: " < /dev/tty
+  else
+    read -rs -p "${prompt}: " secret < /dev/tty
+  fi
+
+  if [[ -z "$secret" ]]
+  then
+    return 1
+  fi
+
+  echo "$secret"
 }
 
 install_deps() {
@@ -146,16 +166,24 @@ install_rbw() {
   export PATH="${tmpdir}:${PATH}"
 }
 
-# Logs in and unlocks the primary rbw account. Needed once per bootstrap run;
-# the agent then stays unlocked for the rest of it (including the later GPG
-# import in the yadm bootstrap step). Interactive: rbw's own pinentry prompts
-# for the master password (and TOTP, if the account needs it) -- this script
-# always runs with a real terminal attached, so there's no need to duplicate
-# that prompt here.
+# Logs in and unlocks the primary rbw account non-interactively. Needed once
+# per bootstrap run; the agent then stays unlocked for the rest of it
+# (including the later GPG import in the yadm bootstrap step).
+#
+# Deliberately NOT relying on rbw's own pinentry prompt here: rbw-agent is a
+# detached background daemon with no controlling terminal of its own
+# (confirmed via `ps` -- TTY column is `?`), and on Termux specifically,
+# pinentry fails to reopen the caller's /dev/pts/N by path ("pinentry error:
+# No such device or address") -- a real-device-confirmed PTY/sandboxing
+# quirk, not something fixable from this script. --stdin/--totp sidesteps
+# pinentry entirely and is what's actually been verified to work here.
 unlock_rbw() {
+  local password="$1"
+  local totp="$2"
+
   rbw config set email "${RBW_EMAIL:-philipp@schmitt.co}"
 
-  if ! rbw unlock
+  if ! echo "$password" | rbw unlock --stdin --totp "$totp"
   then
     echo "Failed to unlock the Bitwarden vault" >&2
     return 1
@@ -344,8 +372,9 @@ then
         shift 2
         ;;
       *)
-        usage
-        exit 2
+        RBW_MASTER_PASSWORD="$1"
+        shift
+        break
         ;;
     esac
   done
@@ -357,11 +386,20 @@ then
   then
     install_rbw
 
-    # rbw is now the secret store for the yadm-init deploy key, this host's
-    # personal SSH key, and (later, in the yadm bootstrap step) the GPG key
-    # -- one interactive unlock (pinentry prompts for the password and, if
-    # needed, a TOTP code) covers all of it.
-    unlock_rbw
+    # Ask for the Bitwarden password/TOTP if not already provided. rbw is
+    # now the secret store for the yadm-init deploy key, this host's
+    # personal SSH key, and (later, in the yadm bootstrap step) the GPG
+    # key -- one unlock covers all of it.
+    if [[ -z "$RBW_MASTER_PASSWORD" ]]
+    then
+      RBW_MASTER_PASSWORD=$(query_secret "Bitwarden password")
+    fi
+    if [[ -z "$RBW_TOTP" ]]
+    then
+      RBW_TOTP=$(query_secret "Bitwarden TOTP code (blank if none)") || true
+    fi
+
+    unlock_rbw "$RBW_MASTER_PASSWORD" "$RBW_TOTP"
     trap cleanup_yadm_init_key EXIT
     get_ssh_key
     get_host_ssh_key "$YADM_HOST"
