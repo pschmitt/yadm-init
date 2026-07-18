@@ -221,6 +221,25 @@ get_ssh_key() {
   fi
 }
 
+# Maps a Termux device's Android codename (getprop ro.product.device) to the
+# short hostname its Bitwarden items are named after (pschmitt@<host>).
+# `hostname`/$HOSTNAME on Android returns nothing usable (see --host's help),
+# so this is the only real signal available at bootstrap time. Mirrors
+# ~/.config/zsh/custom/os/termux/zboot.zsh's table -- keep them in sync.
+__detect_termux_host() {
+  if ! command -v getprop >/dev/null
+  then
+    return
+  fi
+
+  case "$(getprop ro.product.device)" in
+    clover) echo "mp4" ;;
+    redfin) echo "px5" ;;
+    lynx) echo "p7a" ;;
+    ASUS_AI2302) echo "zf10" ;;
+  esac
+}
+
 # Fetches this host's own personal SSH key from Bitwarden (item
 # "pschmitt@<host>"), if one exists. A host that's never been enrolled
 # before won't have one yet -- that's fine, the ansible ssh.yml role
@@ -231,7 +250,8 @@ get_host_ssh_key() {
 
   if [[ -z "$host" ]]
   then
-    echo "No --host given, skipping personal SSH key fetch from Bitwarden" >&2
+    echo "No --host given (and none auto-detected)," \
+      "skipping personal SSH key fetch from Bitwarden" >&2
     return 0
   fi
 
@@ -378,6 +398,11 @@ then
         ;;
     esac
   done
+
+  if [[ -z "$YADM_HOST" ]]
+  then
+    YADM_HOST="$(__detect_termux_host)"
+  fi
 
   install_deps
   install_yadm
