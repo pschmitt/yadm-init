@@ -219,6 +219,39 @@ unlock_rbw() {
   fi
 }
 
+# Prompts for the password/TOTP and unlocks rbw, retrying on a failed
+# login (typo, stale/mistyped TOTP) instead of aborting the whole
+# bootstrap over one bad keystroke.
+login_rbw() {
+  local attempt
+
+  for attempt in 1 2 3
+  do
+    if [[ -z "$RBW_MASTER_PASSWORD" ]]
+    then
+      RBW_MASTER_PASSWORD=$(query_secret "Bitwarden password")
+    fi
+    if [[ -z "$RBW_TOTP" ]]
+    then
+      RBW_TOTP=$(query_secret "Bitwarden TOTP code (blank if none)") || true
+    fi
+
+    if unlock_rbw "$RBW_MASTER_PASSWORD" "$RBW_TOTP"
+    then
+      return 0
+    fi
+
+    # Both get cleared so a bad value is never silently reused - the next
+    # loop iteration always re-prompts for both.
+    RBW_MASTER_PASSWORD=""
+    RBW_TOTP=""
+    echo "Login attempt ${attempt}/3 failed, let's try again" >&2
+  done
+
+  echo "Too many failed Bitwarden login attempts, giving up" >&2
+  return 1
+}
+
 # Only ever needed transiently, to clone yadm-config below -- never meant to
 # be a persistent file on disk. Registered as an EXIT trap so it's removed
 # whether the script finishes normally or dies partway through.
@@ -440,20 +473,10 @@ then
   then
     install_rbw
 
-    # Ask for the Bitwarden password/TOTP if not already provided. rbw is
-    # now the secret store for the yadm-init deploy key, this host's
-    # personal SSH key, and (later, in the yadm bootstrap step) the GPG
-    # key -- one unlock covers all of it.
-    if [[ -z "$RBW_MASTER_PASSWORD" ]]
-    then
-      RBW_MASTER_PASSWORD=$(query_secret "Bitwarden password")
-    fi
-    if [[ -z "$RBW_TOTP" ]]
-    then
-      RBW_TOTP=$(query_secret "Bitwarden TOTP code (blank if none)") || true
-    fi
-
-    unlock_rbw "$RBW_MASTER_PASSWORD" "$RBW_TOTP"
+    # rbw is now the secret store for the yadm-init deploy key, this
+    # host's personal SSH key, and (later, in the yadm bootstrap step)
+    # the GPG key -- one unlock covers all of it.
+    login_rbw
     trap cleanup_yadm_init_key EXIT
     get_ssh_key
     get_host_ssh_key "$YADM_HOST"
