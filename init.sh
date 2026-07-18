@@ -15,6 +15,9 @@ query_secret() {
   else
     read -rs -p "${prompt}: " secret < /dev/tty
   fi
+  # read -s swallows the Enter keypress's newline, so back-to-back prompts
+  # would otherwise run together on the same line.
+  echo >&2
 
   if [[ -z "$secret" ]]
   then
@@ -182,6 +185,10 @@ unlock_rbw() {
   local totp="$2"
 
   rbw config set email "${RBW_EMAIL:-philipp@schmitt.co}"
+
+  # Printed here (not just left to rbw's own output) so it's clear the TOTP
+  # prompt is done and the script has moved on, rather than looking stuck.
+  echo "Logging into Bitwarden..." >&2
 
   if ! echo "$password" | rbw unlock --stdin --totp "$totp"
   then
