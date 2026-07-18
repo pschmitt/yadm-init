@@ -225,6 +225,14 @@ unlock_rbw() {
 login_rbw() {
   local attempt
 
+  # Lets a re-run (after an earlier step failed) skip straight past the
+  # prompts instead of asking again for no reason.
+  if rbw unlocked 2>/dev/null
+  then
+    echo "Bitwarden is already unlocked" >&2
+    return 0
+  fi
+
   for attempt in 1 2 3
   do
     if [[ -z "$RBW_MASTER_PASSWORD" ]]
@@ -388,7 +396,7 @@ yadm_deinit() {
 }
 
 yadm_init() {
-  local url
+  local url log
   local urls=(
     "git@github.com:pschmitt/yadm-config.git"
     "ssh://git@ssh.github.com:443/pschmitt/yadm-config.git"
@@ -398,17 +406,30 @@ yadm_init() {
 
   if [[ -n "$LOCAL_REPO" ]]
   then
-    bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$LOCAL_REPO"
+    run_quiet "Cloning dotfiles" bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$LOCAL_REPO"
   else
+    # Trying each remote in turn is expected to fail a few times before
+    # one works (e.g. no outbound SSH on this network) -- that's not a
+    # real error, so keep each attempt quiet and only dump the combined
+    # log if every remote fails.
+    echo "Cloning dotfiles..." >&2
+    log="$(mktemp)"
+
     for url in "${urls[@]}"
     do
       if GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
-        bash "$(__get_tmpdir)/yadm" clone -f --no-bootstrap "$url"
+        bash "$(__get_tmpdir)/yadm" clone -f --no-bootstrap "$url" >>"$log" 2>&1
       then
+        rm -f "$log"
         "${HOME}/.config/yadm/bootstrap"
-        break
+        return 0
       fi
     done
+
+    echo "Failed to clone dotfiles from any remote" >&2
+    cat "$log" >&2
+    rm -f "$log"
+    return 1
   fi
 }
 
