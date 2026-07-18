@@ -8,21 +8,21 @@ install_deps() {
   if command -v termux-info >/dev/null
   then
     yes | pkg upgrade -y
-    pkg install -y curl git openssh sshpass pinentry
+    pkg install -y curl git openssh pinentry
   elif command -v apt >/dev/null
   then
     sudo apt update
-    sudo apt install -y curl git openssh-client sshpass pinentry
+    sudo apt install -y curl git openssh-client pinentry
   elif command -v dnf >/dev/null
   then
-    sudo dnf install -y curl git openssh-clients sshpass pinentry
+    sudo dnf install -y curl git openssh-clients pinentry
   elif command -v pacman >/dev/null
   then
-    sudo pacman -Sy --noconfirm curl git openssh sshpass x11-ssh-askpass pinentry
+    sudo pacman -Sy --noconfirm curl git openssh x11-ssh-askpass pinentry
   elif command -v apk >/dev/null
   then
     sudo apk update
-    sudo apk add git curl openssh-client sshpass pinentry
+    sudo apk add git curl openssh-client pinentry
   elif command -v nixos-help >/dev/null
   then
     echo "Pro user detected: nixos"
@@ -30,7 +30,7 @@ install_deps() {
   elif uname -s | grep -q CYGWIN_NT
   then
     cygwin_install_apt-cyg
-    cygwin_install_pkg curl git openssh zsh sshpass
+    cygwin_install_pkg curl git openssh zsh
   else
     echo "Unknown OS or distribution" >&2
     return 3
@@ -107,9 +107,9 @@ __rbw_release_target() {
 }
 
 # rbw is the secret store for everything this script needs (the yadm-init
-# deploy key passphrase, this host's personal SSH key, and later the GPG
-# import in the yadm bootstrap step). Skip the download if it's already on
-# PATH -- e.g. NixOS hosts get it from home-manager instead.
+# deploy key, this host's personal SSH key, and later the GPG import in the
+# yadm bootstrap step). Skip the download if it's already on PATH -- e.g.
+# NixOS hosts get it from home-manager instead.
 install_rbw() {
   local tmpdir target tag version url
 
@@ -162,40 +162,25 @@ unlock_rbw() {
   fi
 }
 
-# The yadm-init deploy key's passphrase, stored as a Bitwarden item so
-# nothing needs to be typed for it anymore. Never fails the caller: a missing
-# item (or a locked vault) just means the empty-passphrase fallback in
-# get_ssh_key kicks in instead.
-get_yadm_init_ssh_passphrase() {
-  rbw get "${RBW_YADM_INIT_ITEM:-yadm-init-deploy-key}" 2>/dev/null || true
+# Only ever needed transiently, to clone yadm-config below -- never meant to
+# be a persistent file on disk. Registered as an EXIT trap so it's removed
+# whether the script finishes normally or dies partway through.
+cleanup_yadm_init_key() {
+  rm -f "${HOME}/.ssh/id_yadm_init" "${HOME}/.ssh/id_yadm_init.pub"
 }
 
+# Fetches the yadm-init deploy key -- used only to clone the private
+# yadm-config repo below -- directly from Bitwarden (item
+# "yadm-init-deploy-key", stored unencrypted since rbw's own vault
+# encryption is the protection here; no passphrase to manage).
 get_ssh_key() {
-  local urls=(
-    "https://github.com/pschmitt/yadm-init.git"
-    "https://git.brkn.lol/pschmitt/yadm-init.git"
-  )
-  local passphrase
-
-  cd "${TMPDIR:-/tmp}" || exit 9
-  rm -rf yadm-init
-
-  # Attempt to clone
-  for url in "${urls[@]}"
-  do
-    if git clone "$url"
-    then
-      break
-    fi
-  done
+  local item="${RBW_YADM_INIT_ITEM:-yadm-init-deploy-key}"
 
   # shellcheck disable=SC2174
   mkdir -m 700 -p "${HOME}/.ssh"
-  cp -fv yadm-init/.ssh/id_yadm_init{,.pub} "${HOME}/.ssh"
-  rm -rf yadm-init
+  rbw get "$item" -f private_key > "${HOME}/.ssh/id_yadm_init"
+  rbw get "$item" -f public_key > "${HOME}/.ssh/id_yadm_init.pub"
   chmod 400 "${HOME}"/.ssh/id_yadm_init{,.pub}
-
-  passphrase="$(get_yadm_init_ssh_passphrase)"
 
   # Add key to agent to avoid being prompted multiple times
   if command -v ssh-add >/dev/null
@@ -204,20 +189,7 @@ get_ssh_key() {
     then
       eval "$(ssh-agent)"
     fi
-
-    local ssh_key="${HOME}/.ssh/id_yadm_init"
-    if [[ -n "$passphrase" ]]
-    then
-      if ! timeout 10 \
-        sshpass -p "$passphrase" -P "Enter passphrase" \
-          ssh-add "$ssh_key"
-      then
-        echo "Invalid passphrase from Bitwarden. Please correct." >&2
-        ssh-add "$ssh_key"
-      fi
-    else
-      ssh-add "$ssh_key"
-    fi
+    ssh-add "${HOME}/.ssh/id_yadm_init"
   fi
 }
 
@@ -339,6 +311,15 @@ if ! (return 2>/dev/null)
 then
   set -e
 
+  # This script is normally run as `curl ... | bash -s -- ...`, which leaves
+  # stdin attached to curl's pipe instead of the terminal. rbw's pinentry
+  # needs a real tty on stdin to know where to prompt (see `ttyname(stdin)`
+  # in rbw's client) -- reattach it here so `rbw unlock` can find it.
+  if ! [[ -t 0 ]] && [[ -r /dev/tty ]]
+  then
+    exec < /dev/tty
+  fi
+
   cd "$HOME" || return 9
 
   while [[ -n "$*" ]]
@@ -376,11 +357,12 @@ then
   then
     install_rbw
 
-    # rbw is now the secret store for the yadm-init deploy key passphrase,
-    # this host's personal SSH key, and (later, in the yadm bootstrap step)
-    # the GPG key -- one interactive unlock (pinentry prompts for the
-    # password and, if needed, a TOTP code) covers all of it.
+    # rbw is now the secret store for the yadm-init deploy key, this host's
+    # personal SSH key, and (later, in the yadm bootstrap step) the GPG key
+    # -- one interactive unlock (pinentry prompts for the password and, if
+    # needed, a TOTP code) covers all of it.
     unlock_rbw
+    trap cleanup_yadm_init_key EXIT
     get_ssh_key
     get_host_ssh_key "$YADM_HOST"
   fi
