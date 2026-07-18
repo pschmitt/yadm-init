@@ -1,47 +1,28 @@
 #!/usr/bin/env bash
 
 usage() {
-  echo "Usage: $(basename "$0") [--local DIR] [--host NAME] [BW_PASSWORD]"
-}
-
-query_secret() {
-  local prompt="$1"
-  local secret
-
-  if [[ -n "$ZSH_VERSION" ]]
-  then
-    read -rs "secret?${prompt}: " < /dev/tty
-  else
-    read -rs -p "${prompt}: " secret < /dev/tty
-  fi
-
-  if [[ -z "$secret" ]]
-  then
-    return 1
-  fi
-
-  echo "$secret"
+  echo "Usage: $(basename "$0") [--local DIR] [--host NAME]"
 }
 
 install_deps() {
   if command -v termux-info >/dev/null
   then
     yes | pkg upgrade -y
-    pkg install -y curl git openssh sshpass
+    pkg install -y curl git openssh sshpass pinentry
   elif command -v apt >/dev/null
   then
     sudo apt update
-    sudo apt install -y curl git openssh-client sshpass
+    sudo apt install -y curl git openssh-client sshpass pinentry
   elif command -v dnf >/dev/null
   then
-    sudo dnf install -y curl git openssh-clients sshpass
+    sudo dnf install -y curl git openssh-clients sshpass pinentry
   elif command -v pacman >/dev/null
   then
-    sudo pacman -Sy --noconfirm curl git openssh sshpass x11-ssh-askpass
+    sudo pacman -Sy --noconfirm curl git openssh sshpass x11-ssh-askpass pinentry
   elif command -v apk >/dev/null
   then
     sudo apk update
-    sudo apk add git curl openssh-client sshpass
+    sudo apk add git curl openssh-client sshpass pinentry
   elif command -v nixos-help >/dev/null
   then
     echo "Pro user detected: nixos"
@@ -165,16 +146,16 @@ install_rbw() {
   export PATH="${tmpdir}:${PATH}"
 }
 
-# Logs in and unlocks the primary rbw account non-interactively. Needed once
-# per bootstrap run; the agent then stays unlocked for the rest of it
-# (including the later GPG import in the yadm bootstrap step).
+# Logs in and unlocks the primary rbw account. Needed once per bootstrap run;
+# the agent then stays unlocked for the rest of it (including the later GPG
+# import in the yadm bootstrap step). Interactive: rbw's own pinentry prompts
+# for the master password (and TOTP, if the account needs it) -- this script
+# always runs with a real terminal attached, so there's no need to duplicate
+# that prompt here.
 unlock_rbw() {
-  local password="$1"
-  local totp="$2"
-
   rbw config set email "${RBW_EMAIL:-philipp@schmitt.co}"
 
-  if ! echo "$password" | rbw unlock --stdin --totp "$totp"
+  if ! rbw unlock
   then
     echo "Failed to unlock the Bitwarden vault" >&2
     return 1
@@ -182,9 +163,11 @@ unlock_rbw() {
 }
 
 # The yadm-init deploy key's passphrase, stored as a Bitwarden item so
-# nothing needs to be typed for it anymore.
+# nothing needs to be typed for it anymore. Never fails the caller: a missing
+# item (or a locked vault) just means the empty-passphrase fallback in
+# get_ssh_key kicks in instead.
 get_yadm_init_ssh_passphrase() {
-  rbw get "${RBW_YADM_INIT_ITEM:-yadm-init-deploy-key}" 2>/dev/null
+  rbw get "${RBW_YADM_INIT_ITEM:-yadm-init-deploy-key}" 2>/dev/null || true
 }
 
 get_ssh_key() {
@@ -380,9 +363,8 @@ then
         shift 2
         ;;
       *)
-        RBW_MASTER_PASSWORD="$1"
-        shift
-        break
+        usage
+        exit 2
         ;;
     esac
   done
@@ -394,20 +376,11 @@ then
   then
     install_rbw
 
-    # Ask for the Bitwarden password/TOTP if not already provided. rbw is
-    # now the secret store for the yadm-init deploy key passphrase, this
-    # host's personal SSH key, and (later, in the yadm bootstrap step) the
-    # GPG key -- one unlock covers all of it.
-    if [[ -z "$RBW_MASTER_PASSWORD" ]]
-    then
-      RBW_MASTER_PASSWORD=$(query_secret "Bitwarden password")
-    fi
-    if [[ -z "$RBW_TOTP" ]]
-    then
-      RBW_TOTP=$(query_secret "Bitwarden TOTP code (blank if none)") || true
-    fi
-
-    unlock_rbw "$RBW_MASTER_PASSWORD" "$RBW_TOTP"
+    # rbw is now the secret store for the yadm-init deploy key passphrase,
+    # this host's personal SSH key, and (later, in the yadm bootstrap step)
+    # the GPG key -- one interactive unlock (pinentry prompts for the
+    # password and, if needed, a TOTP code) covers all of it.
+    unlock_rbw
     get_ssh_key
     get_host_ssh_key "$YADM_HOST"
   fi
