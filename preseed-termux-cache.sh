@@ -203,7 +203,7 @@ main() {
   printf 'Next run the existing yadm initializer: curl -fsSL y.brkn.lol -L | bash\n'
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]
+if [[ "${BASH_SOURCE[0]:-}" == "$0" || -z "${BASH_SOURCE[0]:-}" ]]
 then
   main "$@"
 fi
