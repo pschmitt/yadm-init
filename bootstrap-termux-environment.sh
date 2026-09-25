@@ -114,7 +114,7 @@ query_secret() {
 
 upgrade_termux_packages() {
   progress_bar 'Updating Termux base packages' bash -c \
-    'apt update && apt-get -y -o Dpkg::Options::=--force-confold full-upgrade'
+    'apt update && apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade'
 }
 
 install_rbw() {
