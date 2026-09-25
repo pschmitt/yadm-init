@@ -74,7 +74,8 @@ upgrade_termux_packages() {
   log=$(mktemp)
   printf 'Updating Termux packages before downloading the cache...\n' >&2
 
-  if ! apt update >"$log" 2>&1 || ! apt full-upgrade -y >>"$log" 2>&1
+  if ! apt update >"$log" 2>&1 ||
+    ! apt-get -y -o Dpkg::Options::=--force-confold full-upgrade >>"$log" 2>&1
   then
     printf 'Failed to update Termux packages; output follows:\n' >&2
     cat "$log" >&2
