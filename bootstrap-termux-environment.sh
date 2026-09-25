@@ -67,7 +67,7 @@ progress_bar() {
     while kill -0 "$pid" 2>/dev/null
     do
       printf '\r  %s%s%s %s' "$color_dim" "${spinner:spin++%4:1}" "$color_reset" "$title" >&2
-      sleep 0.2
+      /system/bin/sleep 0.2
     done
     printf '\r\033[2K' >&2
   fi
