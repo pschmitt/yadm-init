@@ -52,6 +52,20 @@ run_quiet() {
 install_deps() {
   if command -v termux-info >/dev/null
   then
+    if [[ "${YADM_TERMUX_ARCHIVE_READY:-}" == 1 ]]
+    then
+      local dependency
+      for dependency in curl git ssh ssh-keygen
+      do
+        if ! command -v "$dependency" >/dev/null 2>&1
+        then
+          echo "Prepared Termux environment is missing required command: $dependency" >&2
+          return 1
+        fi
+      done
+      return 0
+    fi
+
     run_quiet "Upgrading packages" bash -c 'yes | pkg upgrade -y'
     run_quiet "Installing dependencies" pkg install -y curl git openssh pinentry
   elif command -v apt >/dev/null
@@ -312,8 +326,8 @@ __detect_termux_host() {
 
 # Fetches this host's own personal SSH key from Bitwarden (item
 # "pschmitt@<host>"), if one exists. A host that's never been enrolled
-# before won't have one yet -- that's fine, the ansible ssh.yml role
-# generates a fresh key in that case, same as before this existed.
+# before won't have one yet -- the Termux setup or Ansible bootstrap
+# generates a fresh key after the dotfiles are cloned.
 get_host_ssh_key() {
   local host="$1"
   local name

@@ -68,6 +68,23 @@ install_rbw() {
   rm -rf -- "$tmpdir"
 }
 
+upgrade_termux_packages() {
+  local log
+
+  log=$(mktemp)
+  printf 'Updating Termux packages before downloading the cache...\n' >&2
+
+  if ! apt update >"$log" 2>&1 || ! apt full-upgrade -y >>"$log" 2>&1
+  then
+    printf 'Failed to update Termux packages; output follows:\n' >&2
+    cat "$log" >&2
+    rm -f -- "$log"
+    return 1
+  fi
+
+  rm -f -- "$log"
+}
+
 login_rbw() {
   local attempt password totp
 
@@ -138,6 +155,7 @@ main() {
     return 1
   fi
 
+  upgrade_termux_packages
   pkg install -y curl coreutils tar >/dev/null
   install_rbw
   login_rbw
