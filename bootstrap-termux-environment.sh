@@ -184,13 +184,6 @@ login_rbw() {
   return 1
 }
 
-manifest_value() {
-  local key="$1"
-  local manifest="$2"
-
-  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1) }' "$manifest"
-}
-
 validate_archive_paths() {
   local archive="$1"
   local kind="$2"
@@ -291,7 +284,7 @@ EOF
 }
 
 main() {
-  local run_yadm=1 architecture manifest_url password prefix_archive home_archive
+  local run_yadm=1 architecture password prefix_archive home_archive
   local prefix_sha256 home_sha256 prefix_url home_url
   local -a args=("$@")
 
@@ -311,7 +304,7 @@ main() {
     return 2
   fi
 
-  if ! command -v termux-info >/dev/null 2>&1
+  if [[ ! -x "$PREFIX/bin/pkg" ]]
   then
     fail 'This provisioner only runs inside Termux'
     return 1
@@ -327,7 +320,7 @@ main() {
   banner
   step 'Prepare Termux and Bitwarden access'
   upgrade_termux_packages
-  progress_bar 'Installing bootstrap tools' pkg install -y curl coreutils tar
+  progress_bar 'Installing bootstrap tools' pkg install -y coreutils curl tar termux-tools
   install_rbw
   success 'Bitwarden CLI is ready'
   login_rbw
@@ -358,35 +351,26 @@ main() {
   chmod 0600 "$tmpdir/netrc"
   unset password
 
-  manifest_url="${blobs_base_url}/private/termux/termux-environment-aarch64-latest.manifest"
   info 'Authenticating to blobs.brkn.lol via the Bitwarden item'
-  curl -qfsSL --netrc-file "$tmpdir/netrc" -o "$tmpdir/manifest" "$manifest_url"
-  if [[ "$(manifest_value format "$tmpdir/manifest")" != 1 || "$(manifest_value arch "$tmpdir/manifest")" != aarch64 ]]
-  then
-    fail 'Environment manifest has an unsupported format or architecture'
-    return 1
-  fi
-
-  prefix_archive=$(manifest_value prefix "$tmpdir/manifest")
-  home_archive=$(manifest_value home "$tmpdir/manifest")
-  prefix_sha256=$(manifest_value prefix_sha256 "$tmpdir/manifest")
-  home_sha256=$(manifest_value home_sha256 "$tmpdir/manifest")
-  if [[ ! "$prefix_archive" =~ ^termux-prefix-aarch64-[[:xdigit:]]{16}-[0-9]{8}T[0-9]{6}Z\.tar\.gz$ ||
-    ! "$home_archive" =~ ^termux-home-aarch64-[[:xdigit:]]{16}-[0-9]{8}T[0-9]{6}Z\.tar\.gz$ ||
-    ! "$prefix_sha256" =~ ^[[:xdigit:]]{64}$ || ! "$home_sha256" =~ ^[[:xdigit:]]{64}$ ]]
-  then
-    fail 'Environment manifest contains invalid archive metadata'
-    return 1
-  fi
-
+  prefix_archive=termux-prefix-aarch64-latest.tar.gz
+  home_archive=termux-home-aarch64-latest.tar.gz
   prefix_url="${blobs_base_url}/private/termux/${prefix_archive}"
   home_url="${blobs_base_url}/private/termux/${home_archive}"
   info 'Downloading package prefix (curl progress bar)'
   curl -qfSL --progress-bar --netrc-file "$tmpdir/netrc" -o "$tmpdir/$prefix_archive" "$prefix_url"
+  curl -qfsSL --netrc-file "$tmpdir/netrc" -o "$tmpdir/$prefix_archive.sha256" "${prefix_url}.sha256"
   info 'Downloading plugin and tool cache (curl progress bar)'
   curl -qfSL --progress-bar --netrc-file "$tmpdir/netrc" -o "$tmpdir/$home_archive" "$home_url"
+  curl -qfsSL --netrc-file "$tmpdir/netrc" -o "$tmpdir/$home_archive.sha256" "${home_url}.sha256"
   unset prefix_url home_url
 
+  prefix_sha256=$(awk 'NR == 1 { print $1 }' "$tmpdir/$prefix_archive.sha256")
+  home_sha256=$(awk 'NR == 1 { print $1 }' "$tmpdir/$home_archive.sha256")
+  if [[ ! "$prefix_sha256" =~ ^[[:xdigit:]]{64}$ || ! "$home_sha256" =~ ^[[:xdigit:]]{64}$ ]]
+  then
+    fail 'Archive checksum files contain invalid SHA-256 values'
+    return 1
+  fi
   if ! printf '%s  %s\n' "$prefix_sha256" "$tmpdir/$prefix_archive" | sha256sum --check --status - ||
     ! printf '%s  %s\n' "$home_sha256" "$tmpdir/$home_archive" | sha256sum --check --status -
   then
@@ -406,7 +390,8 @@ main() {
   mkdir -m 0700 "$stage_prefix"
   progress_bar 'Extracting Termux package prefix' tar -xzf "$tmpdir/$prefix_archive" --strip-components=1 -C "$stage_prefix"
   success 'Package prefix extracted'
-  rm -f -- "$tmpdir/netrc" "$tmpdir/$prefix_archive" "$tmpdir/$home_archive" "$tmpdir/manifest"
+  rm -f -- "$tmpdir/netrc" "$tmpdir/$prefix_archive" "$tmpdir/$prefix_archive.sha256" \
+    "$tmpdir/$home_archive" "$tmpdir/$home_archive.sha256"
   write_swap_helper "$tmpdir/swap-prefix.sh"
   trap - EXIT
   step 'Switch to the prepared Termux environment'
