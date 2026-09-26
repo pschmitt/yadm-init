@@ -402,8 +402,11 @@ yadm_deinit() {
     # FIXME Why is the below command leaving us with broken submodules that
     # cannot be cloned over?
     # yadm submodule foreach 'rm -rf $(pwd)' || true
-    awk "/^\s*path\s*=/ { print \"${HOME}/\" \$3 }" \
-      "${HOME}/.gitmodules" | xargs rm -rfv
+    if [[ -f "${HOME}/.gitmodules" ]]
+    then
+      awk "/^\s*path\s*=/ { print \"${HOME}/\" \$3 }" \
+        "${HOME}/.gitmodules" | xargs rm -rfv
+    fi
   fi
 
   rm -rf "${HOME}/.local/share/yadm" "${HOME}/.gitmodules"
@@ -521,6 +524,9 @@ then
   yadm_deinit
   yadm_init
   yadm_cleanup
+  # This script may run from a curl pipe. It reattaches stdin to the terminal
+  # for Bitwarden prompts, so restore EOF before Bash reads past the script.
+  exec </dev/null
 fi
 
 # vim: set et ts=2 sw=2 :
