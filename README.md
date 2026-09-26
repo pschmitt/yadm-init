@@ -31,11 +31,13 @@ curl -fsSL https://raw.githubusercontent.com/pschmitt/yadm-init/main/bootstrap-t
 The home archive contains only `.local/{bin,lib,share}` cache data. The prefix
 archive contains the Termux package tree and package database. Neither archive
 contains `$HOME` dotfiles or Bitwarden data. Pass `--archive-only` to install
-the archives without running the yadm initializer. The provisioner fetches the
-stable `termux-prefix-aarch64-latest.tar.gz` and
-`termux-home-aarch64-latest.tar.gz` paths, which point to immutable published
-archives, and verifies their SHA-256 sidecars. It shows
-colored phase status and download bars on an interactive terminal; set
+the archives without running the yadm initializer. The provisioner downloads
+the first-stage `nixpp` client and a private cache channel using the existing
+Bitwarden-backed basic-auth credentials. `nixpp` then fetches the prefix and
+home outputs from the signed Nix cache, validating the builder signature,
+archive hashes, and NAR paths before extraction. The stable channel and client
+paths point to immutable published outputs. It shows colored phase status and
+download bars on an interactive terminal; set
 `NO_COLOR=1` to disable color:
 
 ```

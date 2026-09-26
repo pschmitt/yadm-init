@@ -6,6 +6,10 @@ export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 readonly blobs_base_url='https://blobs.brkn.lol'
 readonly bw_item='blobs.brkn.lol private downloads'
 readonly bw_username='termux-cache'
+readonly nixpp_binary_name='nixpp-aarch64-latest'
+readonly nixpp_channel_name='termux-nix-cache-aarch64-latest.manifest'
+readonly nixpp_cache_url="${blobs_base_url}/private/termux/cache"
+readonly nixpp_cache_public_key='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//WWD0='
 readonly files_dir="${PREFIX%/usr}"
 readonly total_steps=4
 step_number=0
@@ -200,6 +204,66 @@ validate_archive_paths() {
   '
 }
 
+valid_store_path() {
+  [[ "$1" =~ ^/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9._+-]+$ ]]
+}
+
+read_cache_channel() {
+  local channel_file="$1"
+  local key value
+  local format='' architecture=''
+  local -A seen=()
+  nixpp_store_path=''
+  prefix_store_path=''
+  home_store_path=''
+
+  while IFS='=' read -r key value
+  do
+    if [[ -z "$key" || -z "$value" || "$key" =~ [^a-z_] || "$value" =~ [[:space:]] ]]
+    then
+      printf 'Invalid cache channel line\n' >&2
+      return 1
+    fi
+    if [[ -n "${seen[$key]:-}" ]]
+    then
+      printf 'Duplicate cache channel field: %s\n' "$key" >&2
+      return 1
+    fi
+    seen[$key]=1
+
+    case "$key" in
+      format)
+        format=$value
+        ;;
+      arch)
+        architecture=$value
+        ;;
+      nixpp)
+        nixpp_store_path=$value
+        ;;
+      prefix)
+        prefix_store_path=$value
+        ;;
+      home)
+        home_store_path=$value
+        ;;
+      *)
+        printf 'Unexpected cache channel field: %s\n' "$key" >&2
+        return 1
+        ;;
+    esac
+  done < "$channel_file"
+
+  if [[ "$format" != 1 || "$architecture" != aarch64 ]] ||
+    ! valid_store_path "$nixpp_store_path" ||
+    ! valid_store_path "$prefix_store_path" ||
+    ! valid_store_path "$home_store_path"
+  then
+    printf 'Cache channel is incomplete or targets an unsupported environment\n' >&2
+    return 1
+  fi
+}
+
 cleanup() {
   local exit_status=$?
 
@@ -273,7 +337,7 @@ cd "$HOME"
 
 if [ "$run_yadm" = 1 ]; then
   export YADM_TERMUX_ARCHIVE_READY=1
-  "$PREFIX/bin/bash" -lic 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'
+  "$PREFIX/bin/bash" -lc 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'
   unset YADM_TERMUX_ARCHIVE_READY
 fi
 
@@ -284,8 +348,7 @@ EOF
 }
 
 main() {
-  local run_yadm=1 architecture password prefix_archive home_archive
-  local prefix_sha256 home_sha256 prefix_url home_url
+  local run_yadm=1 architecture password prefix_archive home_archive nixpp_sha256
   local -a args=("$@")
 
   if [[ "${args[0]:-}" == -h || "${args[0]:-}" == --help ]]
@@ -320,13 +383,13 @@ main() {
   banner
   step 'Prepare Termux and Bitwarden access'
   upgrade_termux_packages
-  progress_bar 'Installing bootstrap tools' pkg install -y coreutils curl tar termux-tools
+  progress_bar 'Installing bootstrap tools' pkg install -y coreutils curl tar termux-tools xz-utils
   install_rbw
   success 'Bitwarden CLI is ready'
   login_rbw
   success 'Bitwarden is unlocked'
 
-  step 'Fetch the private environment archives'
+  step 'Fetch nixpp and resolve the private cache channel'
   mkdir -p "$HOME/.cache"
   chmod 0700 "$HOME/.cache"
   tmpdir=$(mktemp -d "${HOME}/.cache/yadm-init-environment.XXXXXXXX")
@@ -352,32 +415,57 @@ main() {
   unset password
 
   info 'Authenticating to blobs.brkn.lol via the Bitwarden item'
-  prefix_archive=termux-prefix-aarch64-latest.tar.gz
-  home_archive=termux-home-aarch64-latest.tar.gz
-  prefix_url="${blobs_base_url}/private/termux/${prefix_archive}"
-  home_url="${blobs_base_url}/private/termux/${home_archive}"
-  info 'Downloading package prefix (curl progress bar)'
-  curl -qfSL --progress-bar --netrc-file "$tmpdir/netrc" -o "$tmpdir/$prefix_archive" "$prefix_url"
-  curl -qfsSL --netrc-file "$tmpdir/netrc" -o "$tmpdir/$prefix_archive.sha256" "${prefix_url}.sha256"
-  info 'Downloading plugin and tool cache (curl progress bar)'
-  curl -qfSL --progress-bar --netrc-file "$tmpdir/netrc" -o "$tmpdir/$home_archive" "$home_url"
-  curl -qfsSL --netrc-file "$tmpdir/netrc" -o "$tmpdir/$home_archive.sha256" "${home_url}.sha256"
-  unset prefix_url home_url
+  curl -qfsSL --netrc-file "$tmpdir/netrc" \
+    -o "$tmpdir/$nixpp_channel_name" \
+    "${blobs_base_url}/private/termux/${nixpp_channel_name}"
+  if ! read_cache_channel "$tmpdir/$nixpp_channel_name"
+  then
+    fail 'The private Nix cache channel manifest is invalid'
+    return 1
+  fi
 
-  prefix_sha256=$(awk 'NR == 1 { print $1 }' "$tmpdir/$prefix_archive.sha256")
-  home_sha256=$(awk 'NR == 1 { print $1 }' "$tmpdir/$home_archive.sha256")
-  if [[ ! "$prefix_sha256" =~ ^[[:xdigit:]]{64}$ || ! "$home_sha256" =~ ^[[:xdigit:]]{64}$ ]]
+  info 'Downloading the first-stage nixpp client'
+  curl -qfSL --progress-bar --netrc-file "$tmpdir/netrc" \
+    -o "$tmpdir/nixpp" \
+    "${blobs_base_url}/private/termux/${nixpp_binary_name}"
+  curl -qfsSL --netrc-file "$tmpdir/netrc" \
+    -o "$tmpdir/nixpp.sha256" \
+    "${blobs_base_url}/private/termux/${nixpp_binary_name}.sha256"
+  nixpp_sha256=$(awk 'NR == 1 { print $1 }' "$tmpdir/nixpp.sha256")
+  if [[ ! "$nixpp_sha256" =~ ^[[:xdigit:]]{64}$ ]] ||
+    ! printf '%s  %s\n' "$nixpp_sha256" "$tmpdir/nixpp" | sha256sum --check --status -
   then
-    fail 'Archive checksum files contain invalid SHA-256 values'
+    fail 'The first-stage nixpp checksum is invalid'
     return 1
   fi
-  if ! printf '%s  %s\n' "$prefix_sha256" "$tmpdir/$prefix_archive" | sha256sum --check --status - ||
-    ! printf '%s  %s\n' "$home_sha256" "$tmpdir/$home_archive" | sha256sum --check --status -
+  chmod 0700 "$tmpdir/nixpp"
+  "$tmpdir/nixpp" --help >/dev/null
+
+  info 'Fetching the signed Termux prefix package (curl progress bar)'
+  "$tmpdir/nixpp" fetch \
+    --cache "$nixpp_cache_url" \
+    --store-path "$prefix_store_path" \
+    --destination "$tmpdir/prefix-package" \
+    --netrc-file "$tmpdir/netrc" \
+    --public-key "$nixpp_cache_public_key"
+  info 'Fetching the signed Zinit and tool package (curl progress bar)'
+  "$tmpdir/nixpp" fetch \
+    --cache "$nixpp_cache_url" \
+    --store-path "$home_store_path" \
+    --destination "$tmpdir/home-package" \
+    --netrc-file "$tmpdir/netrc" \
+    --public-key "$nixpp_cache_public_key"
+
+  prefix_archive="$tmpdir/prefix-package/share/termux/termux-prefix.tar.gz"
+  home_archive="$tmpdir/home-package/share/termux/termux-home.tar.gz"
+  if [[ ! -s "$prefix_archive" || ! -s "$home_archive" ]]
   then
-    fail 'Downloaded Termux archive checksum does not match'
+    fail 'The signed Nix outputs do not contain the expected Termux archives'
     return 1
   fi
-  if ! validate_archive_paths "$tmpdir/$prefix_archive" prefix || ! validate_archive_paths "$tmpdir/$home_archive" home
+  success 'Nix signatures, NAR hashes, and package output paths verified'
+
+  if ! validate_archive_paths "$prefix_archive" prefix || ! validate_archive_paths "$home_archive" home
   then
     fail 'Downloaded Termux archive contains an unsafe path'
     return 1
@@ -385,13 +473,12 @@ main() {
 
   step 'Verify and stage the prepared files'
   mkdir -p "$HOME/.local" "$files_dir"
-  progress_bar 'Extracting plugin and tool cache' tar -xzf "$tmpdir/$home_archive" -C "$HOME/.local"
+  progress_bar 'Extracting plugin and tool cache' tar -xzf "$home_archive" -C "$HOME/.local"
   success 'Plugin and tool cache extracted'
   mkdir -m 0700 "$stage_prefix"
-  progress_bar 'Extracting Termux package prefix' tar -xzf "$tmpdir/$prefix_archive" --strip-components=1 -C "$stage_prefix"
+  progress_bar 'Extracting Termux package prefix' tar -xzf "$prefix_archive" --strip-components=1 -C "$stage_prefix"
   success 'Package prefix extracted'
-  rm -f -- "$tmpdir/netrc" "$tmpdir/$prefix_archive" "$tmpdir/$prefix_archive.sha256" \
-    "$tmpdir/$home_archive" "$tmpdir/$home_archive.sha256"
+  rm -f -- "$tmpdir/netrc" "$tmpdir/nixpp" "$tmpdir/nixpp.sha256" "$tmpdir/$nixpp_channel_name"
   write_swap_helper "$tmpdir/swap-prefix.sh"
   trap - EXIT
   step 'Switch to the prepared Termux environment'
