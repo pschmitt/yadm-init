@@ -13,37 +13,41 @@ readonly nixpp_cache_public_key='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//
 readonly files_dir="${PREFIX%/usr}"
 readonly total_steps=4
 step_number=0
+force_yes=0
+prefix_confirmed=0
+color_reset=''
+color_bold=''
+color_dim=''
+color_blue=''
+color_cyan=''
+color_green=''
+color_red=''
+color_yellow=''
 
-if [[ -t 2 && -z "${NO_COLOR+x}" && "${TERM:-}" != dumb ]]
-then
-  readonly color_reset=$'\033[0m'
-  readonly color_bold=$'\033[1m'
-  readonly color_dim=$'\033[2m'
-  readonly color_blue=$'\033[34m'
-  readonly color_cyan=$'\033[36m'
-  readonly color_green=$'\033[32m'
-  readonly color_red=$'\033[31m'
-else
-  readonly color_reset=''
-  readonly color_bold=''
-  readonly color_dim=''
-  readonly color_blue=''
-  readonly color_cyan=''
-  readonly color_green=''
-  readonly color_red=''
-fi
+init_ui() {
+  if [[ -t 2 && -z "${NO_COLOR:-}" && "${TERM:-}" != dumb ]]
+  then
+    color_reset=$'\033[0m'
+    color_bold=$'\033[1m'
+    color_dim=$'\033[2m'
+    color_blue=$'\033[34m'
+    color_cyan=$'\033[36m'
+    color_green=$'\033[32m'
+    color_red=$'\033[31m'
+    color_yellow=$'\033[33m'
+  fi
+}
 
 step() {
   step_number=$((step_number + 1))
-  printf '\n%s[%d/%d]%s %s\n' \
+  printf '\n%sStep %d of %d%s  %s\n' \
     "$color_blue$color_bold" "$step_number" "$total_steps" \
     "$color_reset" "$1" >&2
 }
 
 banner() {
-  printf '%s╭──────────────────────────────────────╮%s\n' "$color_cyan" "$color_reset" >&2
-  printf '%s│   Termux environment bootstrap       │%s\n' "$color_cyan$color_bold" "$color_reset" >&2
-  printf '%s╰──────────────────────────────────────╯%s\n\n' "$color_cyan" "$color_reset" >&2
+  printf '%s%sTermux environment setup%s\n' "$color_cyan" "$color_bold" "$color_reset" >&2
+  printf 'Downloads and verifies the prepared AArch64 environment, then starts setup.\n' >&2
 }
 
 success() {
@@ -54,23 +58,76 @@ info() {
   printf '  %s›%s %s\n' "$color_cyan" "$color_reset" "$1" >&2
 }
 
+warn() {
+  printf '  %s!%s %s\n' "$color_yellow" "$color_reset" "$1" >&2
+}
+
 fail() {
   printf '\n%s✗ %s%s\n' "$color_red$color_bold" "$1" "$color_reset" >&2
+}
+
+download_file() {
+  local description="$1"
+  local netrc_file="$2"
+  local destination="$3"
+  local url="$4"
+  local -a curl_options=(-qfSL --netrc-file "$netrc_file")
+
+  if [[ -t 2 && "${TERM:-}" != dumb ]]
+  then
+    curl_options+=(--progress-bar)
+  else
+    curl_options+=(-s)
+  fi
+  if ! curl "${curl_options[@]}" -o "$destination" "$url"
+  then
+    fail "Could not download $description. Check your network and try again."
+    return 1
+  fi
+}
+
+fetch_cache_output() {
+  local description="$1"
+  local store_path="$2"
+  local destination="$3"
+
+  info "Downloading $description; transfer progress appears when available"
+  if ! "$tmpdir/nixpp" fetch \
+    --cache "$nixpp_cache_url" \
+    --store-path "$store_path" \
+    --destination "$destination" \
+    --netrc-file "$tmpdir/netrc" \
+    --public-key "$nixpp_cache_public_key"
+  then
+    fail "Could not download or verify $description."
+    info 'Check the network and Bitwarden access; the current package tree is still active.'
+    return 1
+  fi
+  success "$description downloaded and verified"
 }
 
 progress_bar() {
   local title="$1"
   shift
-  local log rc spinner=$'|/-\\' spin=0 pid
+  local log rc spinner=$'|/-\\' spin=0 pid started elapsed animate=0
 
-  log=$(mktemp)
+  log=$(mktemp "${PREFIX}/tmp/yadm-init-step.XXXXXXXX") || return
+  started=$SECONDS
+  if [[ -t 2 && "${TERM:-}" != dumb ]]
+  then
+    animate=1
+  else
+    info "$title is in progress..."
+  fi
   "$@" >"$log" 2>&1 &
   pid=$!
-  if [[ -t 2 ]]
+  if ((animate))
   then
     while kill -0 "$pid" 2>/dev/null
     do
-      printf '\r  %s%s%s %s' "$color_dim" "${spinner:spin++%4:1}" "$color_reset" "$title" >&2
+      elapsed=$((SECONDS - started))
+      printf '\r  %s%s%s %s (%ds)' \
+        "$color_dim" "${spinner:spin++%4:1}" "$color_reset" "$title" "$elapsed" >&2
       /system/bin/sleep 0.2
     done
     printf '\r\033[2K' >&2
@@ -78,8 +135,9 @@ progress_bar() {
 
   if wait "$pid"
   then
+    elapsed=$((SECONDS - started))
     rm -f -- "$log"
-    success "$title"
+    success "$title (${elapsed}s)"
     return 0
   else
     rc=$?
@@ -92,20 +150,61 @@ progress_bar() {
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--archive-only]
+Usage: $(basename "$0") [OPTIONS]
 
-Install the prepared Termux package and home archives, then run the existing
-yadm initializer. --archive-only installs the archives and opens a fresh shell.
+Install the prepared Termux environment, then run the existing yadm initializer.
+This replaces the package tree under \$PREFIX; files in \$HOME are kept.
+
+Options:
+  --archive-only  Install the archives and open a fresh shell without yadm setup.
+  --yes           Skip the package-tree replacement confirmation.
+  --no-color      Disable colored output (also honors NO_COLOR).
+  -h, --help      Show this help.
 
   curl -fsSL https://raw.githubusercontent.com/pschmitt/yadm-init/main/bootstrap-termux-environment.sh | bash
 EOF
+}
+
+confirm_prefix_replacement() {
+  local answer
+
+  warn "This replaces the Termux package tree at $PREFIX."
+  info 'Your home directory is kept; the yadm initializer may update its own files afterward.'
+  if ((force_yes))
+  then
+    prefix_confirmed=1
+    return 0
+  fi
+  if [[ ! -r /dev/tty ]]
+  then
+    fail 'A terminal is required for confirmation and Bitwarden unlock.'
+    info 'Run this from the Termux app, or pass --yes to confirm replacement non-interactively.'
+    return 1
+  fi
+
+  printf 'Continue? [y/N] ' >&2
+  if ! IFS= read -r answer < /dev/tty
+  then
+    fail 'Could not read the confirmation response.'
+    return 1
+  fi
+  if [[ "${answer,,}" != y && "${answer,,}" != yes ]]
+  then
+    info 'Cancelled. No package-tree changes were made.'
+    return 0
+  fi
+  prefix_confirmed=1
 }
 
 query_secret() {
   local prompt="$1"
   local secret
 
-  read -rs -p "${prompt}: " secret < /dev/tty
+  if ! read -r -s -p "${prompt}: " secret < /dev/tty
+  then
+    printf '\nCould not read input from the terminal. Run this in the Termux app.\n' >&2
+    return 1
+  fi
   printf '\n' >&2
 
   if [[ -z "$secret" ]]
@@ -327,7 +426,6 @@ if ! PREFIX="$prefix" LD_PRELOAD="$prefix/lib/libtermux-exec.so" "$prefix/bin/ss
   exit 1
 fi
 
-"$toybox" rm -rf "$backup" "$tmpdir"
 export PREFIX="$files_dir/usr"
 export HOME="$files_dir/home"
 export TMPDIR="$PREFIX/tmp"
@@ -337,10 +435,24 @@ cd "$HOME"
 
 if [ "$run_yadm" = 1 ]; then
   export YADM_TERMUX_ARCHIVE_READY=1
-  "$PREFIX/bin/bash" -lc 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'
+  if ! "$PREFIX/bin/bash" -lc 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'; then
+    unset YADM_TERMUX_ARCHIVE_READY
+    "$toybox" rm -rf "$tmpdir"
+    echo 'The Termux environment is installed, but yadm setup did not finish.' >&2
+    echo "Your previous package tree is preserved at: $backup" >&2
+    echo 'To restore it from Termux, run:' >&2
+    echo "  /system/bin/toybox rm -rf '$prefix'" >&2
+    echo "  /system/bin/toybox mv '$backup' '$prefix'" >&2
+    exit 1
+  fi
   unset YADM_TERMUX_ARCHIVE_READY
+  echo 'Termux and yadm setup are complete.' >&2
+else
+  echo 'The Termux archives are installed. Yadm setup was skipped.' >&2
 fi
 
+"$toybox" rm -rf "$backup" "$tmpdir"
+echo 'Opening your Zsh session. Type exit to return to Termux.' >&2
 exec "$PREFIX/bin/zsh" -li
 EOF
 
@@ -349,27 +461,65 @@ EOF
 
 main() {
   local run_yadm=1 architecture password prefix_archive home_archive nixpp_sha256
-  local -a args=("$@")
+  local arg
 
-  if [[ "${args[0]:-}" == -h || "${args[0]:-}" == --help ]]
-  then
-    usage
-    return 0
-  fi
+  while (($# > 0))
+  do
+    case "$1" in
+      --archive-only)
+        run_yadm=0
+        ;;
+      --yes)
+        force_yes=1
+        ;;
+      --no-color)
+        NO_COLOR=1
+        export NO_COLOR
+        ;;
+      -h | --help)
+        usage
+        return 0
+        ;;
+      *)
+        arg=$1
+        printf 'Unknown option: %s\n' "$arg" >&2
+        usage >&2
+        return 2
+        ;;
+    esac
+    shift
+  done
 
-  if [[ "${args[0]:-}" == --archive-only && "${#args[@]}" -eq 1 ]]
-  then
-    run_yadm=0
-  elif [[ "${#args[@]}" -ne 0 ]]
-  then
-    printf 'Unexpected argument: %s\n' "${args[0]}" >&2
-    usage >&2
-    return 2
-  fi
+  init_ui
 
   if [[ ! -x "$PREFIX/bin/pkg" ]]
   then
     fail 'This provisioner only runs inside Termux'
+    return 1
+  fi
+
+  banner
+  if [[ "$PREFIX" != /data/data/com.termux/files/usr ]]
+  then
+    fail "Unexpected Termux prefix: $PREFIX"
+    info 'This release is built for the official Termux app with its standard package prefix.'
+    return 1
+  fi
+
+  if [[ -e "$files_dir/usr.bootstrap-backup" ]]
+  then
+    fail 'A previous setup left the original package tree backed up.'
+    info "Backup: $files_dir/usr.bootstrap-backup"
+    info 'Restore it in Termux with:'
+    printf '  /system/bin/toybox rm -rf %q && /system/bin/toybox mv %q %q\n' \
+      "$PREFIX" "$files_dir/usr.bootstrap-backup" "$PREFIX" >&2
+    return 1
+  fi
+  if [[ -e "$files_dir/usr.bootstrap-new" ]]
+  then
+    fail 'An interrupted setup left a staged package tree.'
+    info 'The staged tree is inactive. Remove it in Termux, then retry:'
+    printf '  /system/bin/toybox rm -rf %q\n' "$files_dir/usr.bootstrap-new" >&2
     return 1
   fi
 
@@ -380,16 +530,23 @@ main() {
     return 1
   fi
 
-  banner
+  info "Detected Termux aarch64; $(df -h "$HOME" | awk 'END { print $4 " available on app storage" }')"
+  confirm_prefix_replacement || return
+  if ((!prefix_confirmed))
+  then
+    return 0
+  fi
+
   step 'Prepare Termux and Bitwarden access'
+  info 'Updating Termux starter packages before downloading the prepared environment.'
   upgrade_termux_packages
-  progress_bar 'Installing bootstrap tools' pkg install -y coreutils curl tar termux-tools xz-utils
+  progress_bar 'Installing required Termux tools' pkg install -y coreutils curl tar termux-tools xz-utils
   install_rbw
   success 'Bitwarden CLI is ready'
   login_rbw
   success 'Bitwarden is unlocked'
 
-  step 'Fetch nixpp and resolve the private cache channel'
+  step 'Connect to your private download cache'
   mkdir -p "$HOME/.cache"
   chmod 0700 "$HOME/.cache"
   tmpdir=$(mktemp -d "${HOME}/.cache/yadm-init-environment.XXXXXXXX")
@@ -402,7 +559,12 @@ main() {
     return 1
   fi
 
-  password=$(rbw get "$bw_item" -f password)
+  if ! password=$(rbw get "$bw_item" -f password)
+  then
+    fail 'Could not read the private-download password from Bitwarden.'
+    info "Unlock rbw and check the Bitwarden item named '$bw_item'."
+    return 1
+  fi
   if [[ ! "$password" =~ ^[[:alnum:]]{32,}$ ]]
   then
     unset password
@@ -414,19 +576,23 @@ main() {
   chmod 0600 "$tmpdir/netrc"
   unset password
 
-  info 'Authenticating to blobs.brkn.lol via the Bitwarden item'
-  curl -qfsSL --netrc-file "$tmpdir/netrc" \
+  info 'Checking your private download access'
+  if ! curl -qfsSL --netrc-file "$tmpdir/netrc" \
     -o "$tmpdir/$nixpp_channel_name" \
     "${blobs_base_url}/private/termux/${nixpp_channel_name}"
+  then
+    fail 'Could not reach the private download channel.'
+    info 'Check your network and Bitwarden download credentials, then rerun the command.'
+    return 1
+  fi
   if ! read_cache_channel "$tmpdir/$nixpp_channel_name"
   then
     fail 'The private Nix cache channel manifest is invalid'
     return 1
   fi
 
-  info 'Downloading the first-stage nixpp client'
-  curl -qfSL --progress-bar --netrc-file "$tmpdir/netrc" \
-    -o "$tmpdir/nixpp" \
+  info 'Downloading the small cache verifier'
+  download_file 'the cache verifier' "$tmpdir/netrc" "$tmpdir/nixpp" \
     "${blobs_base_url}/private/termux/${nixpp_binary_name}"
   curl -qfsSL --netrc-file "$tmpdir/netrc" \
     -o "$tmpdir/nixpp.sha256" \
@@ -441,20 +607,10 @@ main() {
   chmod 0700 "$tmpdir/nixpp"
   "$tmpdir/nixpp" --help >/dev/null
 
-  info 'Fetching the signed Termux prefix package (curl progress bar)'
-  "$tmpdir/nixpp" fetch \
-    --cache "$nixpp_cache_url" \
-    --store-path "$prefix_store_path" \
-    --destination "$tmpdir/prefix-package" \
-    --netrc-file "$tmpdir/netrc" \
-    --public-key "$nixpp_cache_public_key"
-  info 'Fetching the signed Zinit and tool package (curl progress bar)'
-  "$tmpdir/nixpp" fetch \
-    --cache "$nixpp_cache_url" \
-    --store-path "$home_store_path" \
-    --destination "$tmpdir/home-package" \
-    --netrc-file "$tmpdir/netrc" \
-    --public-key "$nixpp_cache_public_key"
+  fetch_cache_output 'the Termux package archive' \
+    "$prefix_store_path" "$tmpdir/prefix-package"
+  fetch_cache_output 'the shell and user tools archive' \
+    "$home_store_path" "$tmpdir/home-package"
 
   prefix_archive="$tmpdir/prefix-package/share/termux/termux-prefix.tar.gz"
   home_archive="$tmpdir/home-package/share/termux/termux-home.tar.gz"
@@ -463,7 +619,7 @@ main() {
     fail 'The signed Nix outputs do not contain the expected Termux archives'
     return 1
   fi
-  success 'Nix signatures, NAR hashes, and package output paths verified'
+  success 'Both archives passed signature and integrity checks'
 
   if ! validate_archive_paths "$prefix_archive" prefix || ! validate_archive_paths "$home_archive" home
   then
@@ -471,23 +627,21 @@ main() {
     return 1
   fi
 
-  step 'Verify and stage the prepared files'
+  step 'Prepare the new environment'
   mkdir -p "$HOME/.local" "$files_dir"
-  progress_bar 'Extracting plugin and tool cache' tar -xzf "$home_archive" -C "$HOME/.local"
-  success 'Plugin and tool cache extracted'
+  progress_bar 'Extracting shell and user tools' tar -xzf "$home_archive" -C "$HOME/.local"
   mkdir -m 0700 "$stage_prefix"
-  progress_bar 'Extracting Termux package prefix' tar -xzf "$prefix_archive" --strip-components=1 -C "$stage_prefix"
-  success 'Package prefix extracted'
+  progress_bar 'Preparing Termux packages' tar -xzf "$prefix_archive" --strip-components=1 -C "$stage_prefix"
   rm -f -- "$tmpdir/netrc" "$tmpdir/nixpp" "$tmpdir/nixpp.sha256" "$tmpdir/$nixpp_channel_name"
   write_swap_helper "$tmpdir/swap-prefix.sh"
   trap - EXIT
   step 'Switch to the prepared Termux environment'
-  info 'The installer keeps a rollback copy until basic startup checks pass'
+  info 'The old package tree stays available until startup and yadm setup succeed.'
   if [[ "$run_yadm" == 1 ]]
   then
     info 'After the switch, y.brkn.lol will clone your private yadm config and apply the Termux setup'
   fi
-  success 'Archives passed checksum and path checks'
+  success 'Ready to switch to the verified environment'
   exec /system/bin/sh "$tmpdir/swap-prefix.sh" "$stage_prefix" "$tmpdir" "$run_yadm"
 }
 
