@@ -459,15 +459,6 @@ if ! (return 2>/dev/null)
 then
   set -e
 
-  # This script is normally run as `curl ... | bash -s -- ...`, which leaves
-  # stdin attached to curl's pipe instead of the terminal. rbw's pinentry
-  # needs a real tty on stdin to know where to prompt (see `ttyname(stdin)`
-  # in rbw's client) -- reattach it here so `rbw unlock` can find it.
-  if ! [[ -t 0 ]] && [[ -r /dev/tty ]]
-  then
-    exec < /dev/tty
-  fi
-
   cd "$HOME" || return 9
 
   NIXPP_MODE=0
@@ -517,6 +508,15 @@ then
         ;;
     esac
   done
+
+  # This script is normally run as `curl ... | bash -s -- ...`, which leaves
+  # stdin attached to curl's pipe. Reattach to a tty only after parsing so
+  # help and argument errors work in non-interactive contexts too. rbw's
+  # pinentry needs a real tty on stdin to know where to prompt.
+  if ! [[ -t 0 ]] && [[ -r /dev/tty ]]
+  then
+    exec < /dev/tty
+  fi
 
   if ((NIXPP_MODE))
   then
