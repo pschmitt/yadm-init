@@ -314,7 +314,7 @@ read_cache_channel() {
   local -A seen=()
   nixpp_store_path=''
   prefix_store_path=''
-  home_store_path=''
+  native_store_path=''
 
   while IFS='=' read -r key value
   do
@@ -343,8 +343,8 @@ read_cache_channel() {
       prefix)
         prefix_store_path=$value
         ;;
-      home)
-        home_store_path=$value
+      native)
+        native_store_path=$value
         ;;
       *)
         printf 'Unexpected cache channel field: %s\n' "$key" >&2
@@ -356,7 +356,7 @@ read_cache_channel() {
   if [[ "$format" != 1 || "$architecture" != aarch64 ]] ||
     ! valid_store_path "$nixpp_store_path" ||
     ! valid_store_path "$prefix_store_path" ||
-    ! valid_store_path "$home_store_path"
+    ! valid_store_path "$native_store_path"
   then
     printf 'Cache channel is incomplete or targets an unsupported environment\n' >&2
     return 1
@@ -393,6 +393,8 @@ prefix="$files_dir/usr"
 stage_prefix="$1"
 tmpdir="$2"
 run_yadm="$3"
+native_archive="$4"
+native_sha256="$5"
 backup="$files_dir/usr.bootstrap-backup"
 toybox='/system/bin/toybox'
 
@@ -433,6 +435,13 @@ export PATH="$PREFIX/bin:/system/bin"
 export LD_PRELOAD="$PREFIX/lib/libtermux-exec.so"
 cd "$HOME"
 
+if ! "$PREFIX/bin/bash" "$tmpdir/native-package/bootstrap.sh" install "$native_archive" "$native_sha256"; then
+  "$toybox" rm -rf "$tmpdir"
+  echo 'The package tree is active, but the managed Termux generation could not be installed.' >&2
+  echo "Your previous package tree is preserved at: $backup" >&2
+  exit 1
+fi
+
 if [ "$run_yadm" = 1 ]; then
   export YADM_TERMUX_ARCHIVE_READY=1
   if ! "$PREFIX/bin/bash" -lc 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'; then
@@ -460,7 +469,7 @@ EOF
 }
 
 main() {
-  local run_yadm=1 architecture password prefix_archive home_archive nixpp_sha256
+  local run_yadm=1 architecture password prefix_archive native_archive native_sha256 native_filename nixpp_sha256
   local arg
 
   while (($# > 0))
@@ -609,27 +618,46 @@ main() {
 
   fetch_cache_output 'the Termux package archive' \
     "$prefix_store_path" "$tmpdir/prefix-package"
-  fetch_cache_output 'the shell and user tools archive' \
-    "$home_store_path" "$tmpdir/home-package"
+  fetch_cache_output 'the managed Termux shell generation' \
+    "$native_store_path" "$tmpdir/native-package"
 
   prefix_archive="$tmpdir/prefix-package/share/termux/termux-prefix.tar.gz"
-  home_archive="$tmpdir/home-package/share/termux/termux-home.tar.gz"
-  if [[ ! -s "$prefix_archive" || ! -s "$home_archive" ]]
+  native_archive="$tmpdir/native-package/environment.tar.gz"
+  if [[ ! -s "$prefix_archive" || ! -s "$native_archive" || ! -s "$tmpdir/native-package/SHA256SUMS" ]]
   then
     fail 'The signed Nix outputs do not contain the expected Termux archives'
     return 1
   fi
+  native_sha256=''
+  native_filename=''
+  IFS=' ' read -r native_sha256 native_filename < "$tmpdir/native-package/SHA256SUMS"
+  if [[ ! "$native_sha256" =~ ^[[:xdigit:]]{64}$ || "$native_filename" != environment.tar.gz ]] ||
+    [[ "$(wc -l < "$tmpdir/native-package/SHA256SUMS")" -ne 1 ]]
+  then
+    fail 'The managed generation has an invalid archive checksum manifest'
+    return 1
+  fi
+  if ! printf '%s  %s\n' "$native_sha256" "$native_archive" | sha256sum --check --status -
+  then
+    fail 'The managed generation archive checksum does not match'
+    return 1
+  fi
   success 'Both archives passed signature and integrity checks'
 
-  if ! validate_archive_paths "$prefix_archive" prefix || ! validate_archive_paths "$home_archive" home
+  if ! validate_archive_paths "$prefix_archive" prefix || ! validate_archive_paths "$native_archive" generation
   then
     fail 'Downloaded Termux archive contains an unsafe path'
     return 1
   fi
 
+  if ! bash "$tmpdir/native-package/activate.sh" preflight "$native_archive" "$native_sha256"
+  then
+    fail 'The managed Termux generation failed its preflight check'
+    return 1
+  fi
+
   step 'Prepare the new environment'
-  mkdir -p "$HOME/.local" "$files_dir"
-  progress_bar 'Extracting shell and user tools' tar -xzf "$home_archive" -C "$HOME/.local"
+  mkdir -p "$files_dir"
   mkdir -m 0700 "$stage_prefix"
   progress_bar 'Preparing Termux packages' tar -xzf "$prefix_archive" --strip-components=1 -C "$stage_prefix"
   rm -f -- "$tmpdir/netrc" "$tmpdir/nixpp" "$tmpdir/nixpp.sha256" "$tmpdir/$nixpp_channel_name"
@@ -642,7 +670,7 @@ main() {
     info 'After the switch, y.brkn.lol will clone your private yadm config and apply the Termux setup'
   fi
   success 'Ready to switch to the verified environment'
-  exec /system/bin/sh "$tmpdir/swap-prefix.sh" "$stage_prefix" "$tmpdir" "$run_yadm"
+  exec /system/bin/sh "$tmpdir/swap-prefix.sh" "$stage_prefix" "$tmpdir" "$run_yadm" "$native_archive" "$native_sha256"
 }
 
 if [[ "${BASH_SOURCE[0]:-}" == "$0" || -z "${BASH_SOURCE[0]:-}" ]]

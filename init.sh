@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 usage() {
-  echo "Usage: $(basename "$0") [--local DIR] [--host NAME] [BW_PASSWORD]"
+  echo "Usage: $(basename "$0") [--nixpp [--archive-only] [--yes] [--no-color]] [--local DIR] [--host NAME] [BW_PASSWORD]"
 }
 
 # Bash's own `read` builtin, not pinentry -- see unlock_rbw for why.
@@ -470,9 +470,25 @@ then
 
   cd "$HOME" || return 9
 
+  NIXPP_MODE=0
+  nixpp_args=()
+  nixpp_incompatible_args=0
+
   while [[ -n "$*" ]]
   do
     case "$1" in
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      --nixpp)
+        NIXPP_MODE=1
+        shift
+        ;;
+      --archive-only | --yes | --no-color)
+        nixpp_args+=("$1")
+        shift
+        ;;
       local|--local|-l|l|-L)
         if [[ -z "$2" ]]
         then
@@ -480,6 +496,7 @@ then
           exit 2
         fi
         LOCAL_REPO="$2"
+        nixpp_incompatible_args=1
         shift 2
         ;;
       host|--host|-H)
@@ -489,15 +506,44 @@ then
           exit 2
         fi
         YADM_HOST="$2"
+        nixpp_incompatible_args=1
         shift 2
         ;;
       *)
         RBW_MASTER_PASSWORD="$1"
+        nixpp_incompatible_args=1
         shift
         break
         ;;
     esac
   done
+
+  if ((NIXPP_MODE))
+  then
+    if ((nixpp_incompatible_args))
+    then
+      echo "--nixpp cannot be combined with --local, --host, or a positional Bitwarden password" >&2
+      usage >&2
+      exit 2
+    fi
+    if ! command -v termux-info >/dev/null 2>&1
+    then
+      echo '--nixpp is only supported inside the official Termux app' >&2
+      exit 1
+    fi
+
+    set -o pipefail
+    curl -fsSL https://raw.githubusercontent.com/pschmitt/yadm-init/main/bootstrap-termux-environment.sh |
+      bash -s -- "${nixpp_args[@]}"
+    exit $?
+  fi
+
+  if ((${#nixpp_args[@]} > 0))
+  then
+    echo 'Use --archive-only, --yes, and --no-color together with --nixpp' >&2
+    usage >&2
+    exit 2
+  fi
 
   if [[ -z "$YADM_HOST" ]]
   then
