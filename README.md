@@ -8,8 +8,8 @@ curl -L yadm.brkn.lol | bash -s -- --nixpp
 ```
 
 `--nixpp` fetches the prepared Termux installer from this repository. It
-upgrades the Termux base packages, installs and activates the signed APT prefix
-and managed Zsh generation, then runs the existing yadm clone and bootstrap.
+verifies the signed APT prefix and managed Zsh generation before replacing the
+Termux package tree, then runs the existing yadm clone and bootstrap.
 The ordinary `curl -L yadm.brkn.lol | bash` path for other hosts is unchanged.
 
 The installer will explain that it replaces Termux's package tree and ask
@@ -57,7 +57,7 @@ For help, pass `--nixpp --help`. `--no-color` is also available; setting
 - Answer `n` at the confirmation prompt to cancel before the installer changes
   packages or downloads the archives.
 - If a download or integrity check fails, the current package tree is not
-  replaced. Package updates performed at the start may already have completed.
+  replaced, and the installer has not changed the APT package database.
 - The installer keeps the previous package tree until the new Termux startup
   and yadm setup succeed. If yadm setup fails, the installer prints the backup
   path and exact commands to restore it.
@@ -66,12 +66,14 @@ For help, pass `--nixpp --help`. `--no-color` is also available; setting
 
 ## What gets installed
 
-The installer upgrades Termux's initial packages, unlocks the Bitwarden item
-for private download access, downloads the small `nixpp` verifier, then fetches
-the signed Termux APT prefix and Nix-managed shell generation. It validates
-both outputs before switching the package tree and activating the generation.
+The installer unlocks the Bitwarden item for private download access, downloads
+the small `nixpp` verifier, then fetches the signed Termux APT prefix and
+Nix-managed shell generation. It validates both outputs before switching the
+package tree and activating the generation.
 
-The outputs contain no private yadm dotfiles or Bitwarden credentials. Termux
+The outputs contain no private yadm dotfiles or Bitwarden credentials. The
+installer checks Termux's stock download and archive tools without upgrading
+or installing packages before the signed outputs are verified. Termux
 APT owns Termux packages and their dependencies; the native generation contains
 only generated Home Manager configuration and supported Android/Bionic tools.
 The private yadm repository is still cloned and bootstrapped separately by the

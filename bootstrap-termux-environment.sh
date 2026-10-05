@@ -215,9 +215,17 @@ query_secret() {
   printf '%s' "$secret"
 }
 
-upgrade_termux_packages() {
-  progress_bar 'Updating Termux base packages' bash -c \
-    'apt update && apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade'
+require_bootstrap_tools() {
+  local command
+  for command in curl tar sha256sum xz
+  do
+    if ! command -v "$command" >/dev/null 2>&1
+    then
+      fail "The initial Termux installation is missing '$command'."
+      info 'Open Termux and install its standard bootstrap packages, then retry.'
+      return 1
+    fi
+  done
 }
 
 install_rbw() {
@@ -547,9 +555,7 @@ main() {
   fi
 
   step 'Prepare Termux and Bitwarden access'
-  info 'Updating Termux starter packages before downloading the prepared environment.'
-  upgrade_termux_packages
-  progress_bar 'Installing required Termux tools' pkg install -y coreutils curl tar termux-tools xz-utils
+  require_bootstrap_tools || return
   install_rbw
   success 'Bitwarden CLI is ready'
   login_rbw
