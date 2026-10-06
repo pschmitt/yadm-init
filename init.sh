@@ -179,6 +179,7 @@ install_rbw() {
   then
     if rbw --help >/dev/null 2>&1
     then
+      RBW_BIN="$(command -v rbw)"
       return 0
     fi
   fi
@@ -208,6 +209,7 @@ install_rbw() {
   cp -f "${tmpdir}/rbw-${version}-${target}/rbw" "${tmpdir}/rbw"
   cp -f "${tmpdir}/rbw-${version}-${target}/rbw-agent" "${tmpdir}/rbw-agent"
   chmod a+x "${tmpdir}/rbw" "${tmpdir}/rbw-agent"
+  RBW_BIN="${tmpdir}/rbw"
   export PATH="${tmpdir}:${PATH}"
 }
 
@@ -226,13 +228,13 @@ unlock_rbw() {
   local password="$1"
   local totp="$2"
 
-  rbw config set email "${RBW_EMAIL:-philipp@schmitt.co}"
+  "$RBW_BIN" config set email "${RBW_EMAIL:-philipp@schmitt.co}"
 
   # Printed here (not just left to rbw's own output) so it's clear the TOTP
   # prompt is done and the script has moved on, rather than looking stuck.
   echo "Logging into Bitwarden..." >&2
 
-  if ! echo "$password" | rbw unlock --stdin --totp "$totp"
+  if ! echo "$password" | "$RBW_BIN" unlock --stdin --totp "$totp"
   then
     echo "Failed to unlock the Bitwarden vault" >&2
     return 1
@@ -247,7 +249,7 @@ login_rbw() {
 
   # Lets a re-run (after an earlier step failed) skip straight past the
   # prompts instead of asking again for no reason.
-  if rbw unlocked 2>/dev/null
+  if "$RBW_BIN" unlocked 2>/dev/null
   then
     echo "Bitwarden is already unlocked" >&2
     return 0
@@ -296,8 +298,8 @@ get_ssh_key() {
 
   # shellcheck disable=SC2174
   mkdir -m 700 -p "${HOME}/.ssh"
-  rbw get "$item" -f private_key > "${HOME}/.ssh/id_yadm_init"
-  rbw get "$item" -f public_key > "${HOME}/.ssh/id_yadm_init.pub"
+  "$RBW_BIN" get "$item" -f private_key > "${HOME}/.ssh/id_yadm_init"
+  "$RBW_BIN" get "$item" -f public_key > "${HOME}/.ssh/id_yadm_init.pub"
   chmod 400 "${HOME}"/.ssh/id_yadm_init{,.pub}
 
   # Add key to agent to avoid being prompted multiple times
@@ -352,7 +354,7 @@ get_host_ssh_key() {
   fi
 
   name="pschmitt@${host}"
-  if ! rbw get "$name" >/dev/null 2>&1
+  if ! "$RBW_BIN" get "$name" >/dev/null 2>&1
   then
     echo "No '${name}' SSH key in Bitwarden -- a new one will be generated" >&2
     return 0
@@ -360,8 +362,8 @@ get_host_ssh_key() {
 
   # shellcheck disable=SC2174
   mkdir -m 700 -p "${HOME}/.ssh"
-  rbw get "$name" -f private_key > "${HOME}/.ssh/id_ed25519"
-  rbw get "$name" -f public_key > "${HOME}/.ssh/id_ed25519.pub"
+  "$RBW_BIN" get "$name" -f private_key > "${HOME}/.ssh/id_ed25519"
+  "$RBW_BIN" get "$name" -f public_key > "${HOME}/.ssh/id_ed25519.pub"
   chmod 600 "${HOME}/.ssh/id_ed25519"
   chmod 644 "${HOME}/.ssh/id_ed25519.pub"
   echo "Fetched SSH key '${name}' from Bitwarden"
