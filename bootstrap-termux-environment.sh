@@ -11,6 +11,8 @@ readonly nixpp_channel_name='termux-nix-cache-aarch64-latest.manifest'
 readonly nixpp_cache_url="${blobs_base_url}/private/termux/cache"
 readonly nixpp_cache_public_key='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//WWD0='
 readonly files_dir="${PREFIX%/usr}"
+rbw_tmpdir=''
+RBW_BIN=''
 readonly total_steps=4
 step_number=0
 force_yes=0
@@ -229,59 +231,52 @@ require_bootstrap_tools() {
 }
 
 install_rbw() {
-  local tmpdir tag version url
+  local tag version url
 
-  if command -v rbw >/dev/null 2>&1
-  then
-    return 0
-  fi
-
-  tmpdir=$(mktemp -d "${PREFIX}/tmp/yadm-init-rbw.XXXXXXXX")
+  rbw_tmpdir=$(mktemp -d "${PREFIX}/tmp/yadm-init-rbw.XXXXXXXX")
   tag=$(curl -fsSI 'https://github.com/pschmitt/rbw/releases/latest' |
     awk 'tolower($1) == "location:" { gsub("\r", "", $2); count = split($2, parts, "/"); print parts[count] }')
   if [[ -z "$tag" ]]
   then
-    rm -rf -- "$tmpdir"
     printf 'Could not determine the latest rbw release\n' >&2
     return 1
   fi
 
   version="${tag#v}"
   url="https://github.com/pschmitt/rbw/releases/download/${tag}/rbw-${version}-aarch64-linux-android.tar.gz"
-  if ! curl -qfSL --progress-bar -o "$tmpdir/rbw.tar.gz" "$url"
+  if ! curl -qfSL --progress-bar -o "$rbw_tmpdir/rbw.tar.gz" "$url"
   then
-    rm -rf -- "$tmpdir"
     printf 'Could not download rbw for Termux aarch64\n' >&2
     return 1
   fi
 
-  tar -xzf "$tmpdir/rbw.tar.gz" -C "$tmpdir"
-  install -m 700 "$tmpdir/rbw-${version}-aarch64-linux-android/rbw" "$PREFIX/bin/rbw"
-  install -m 700 "$tmpdir/rbw-${version}-aarch64-linux-android/rbw-agent" "$PREFIX/bin/rbw-agent"
-  rm -rf -- "$tmpdir"
+  tar -xzf "$rbw_tmpdir/rbw.tar.gz" -C "$rbw_tmpdir"
+  install -m 700 "$rbw_tmpdir/rbw-${version}-aarch64-linux-android/rbw" "$rbw_tmpdir/rbw"
+  install -m 700 "$rbw_tmpdir/rbw-${version}-aarch64-linux-android/rbw-agent" "$rbw_tmpdir/rbw-agent"
+  RBW_BIN="$rbw_tmpdir/rbw"
 }
 
 login_rbw() {
   local attempt email password totp
 
-  if rbw unlocked >/dev/null 2>&1
+  if "$RBW_BIN" unlocked >/dev/null 2>&1
   then
     printf 'Bitwarden is already unlocked\n' >&2
     return 0
   fi
 
-  email="${RBW_EMAIL:-$(rbw config get email 2>/dev/null || true)}"
+  email="${RBW_EMAIL:-$("$RBW_BIN" config get email 2>/dev/null || true)}"
   if [[ -z "$email" ]]
   then
     read -r -p 'Bitwarden email: ' email < /dev/tty
   fi
-  rbw config set email "$email"
+  "$RBW_BIN" config set email "$email"
   for attempt in 1 2 3
   do
     password=$(query_secret 'Bitwarden password')
     totp=$(query_secret 'Bitwarden TOTP code (blank if none)') || true
 
-    if printf '%s\n' "$password" | rbw unlock --stdin --totp "$totp"
+    if printf '%s\n' "$password" | "$RBW_BIN" unlock --stdin --totp "$totp"
     then
       unset password totp
       return 0
@@ -377,6 +372,10 @@ cleanup() {
   if [[ -n "${tmpdir:-}" ]]
   then
     rm -rf -- "$tmpdir"
+  fi
+  if [[ -n "${rbw_tmpdir:-}" ]]
+  then
+    rm -rf -- "$rbw_tmpdir"
   fi
   if [[ -n "${stage_prefix:-}" && -d "$stage_prefix" ]]
   then
@@ -556,6 +555,7 @@ main() {
 
   step 'Prepare Termux and Bitwarden access'
   require_bootstrap_tools || return
+  trap cleanup EXIT
   install_rbw
   success 'Bitwarden CLI is ready'
   login_rbw
@@ -566,7 +566,6 @@ main() {
   chmod 0700 "$HOME/.cache"
   tmpdir=$(mktemp -d "${HOME}/.cache/yadm-init-environment.XXXXXXXX")
   chmod 0700 "$tmpdir"
-  trap cleanup EXIT
   stage_prefix="${files_dir}/usr.bootstrap-new"
   if [[ -e "$stage_prefix" ]]
   then
@@ -574,7 +573,7 @@ main() {
     return 1
   fi
 
-  if ! password=$(rbw get "$bw_item" -f password)
+  if ! password=$("$RBW_BIN" get "$bw_item" -f password)
   then
     fail 'Could not read the private-download password from Bitwarden.'
     info "Unlock rbw and check the Bitwarden item named '$bw_item'."
