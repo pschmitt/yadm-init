@@ -210,6 +210,7 @@ install_rbw() {
   cp -f "${tmpdir}/rbw-${version}-${target}/rbw-agent" "${tmpdir}/rbw-agent"
   chmod a+x "${tmpdir}/rbw" "${tmpdir}/rbw-agent"
   RBW_BIN="${tmpdir}/rbw"
+  export RBW_AGENT="${tmpdir}/rbw-agent"
   export PATH="${tmpdir}:${PATH}"
 }
 

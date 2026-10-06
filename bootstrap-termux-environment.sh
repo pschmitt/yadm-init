@@ -254,6 +254,7 @@ install_rbw() {
   install -m 700 "$rbw_tmpdir/rbw-${version}-aarch64-linux-android/rbw" "$rbw_tmpdir/rbw"
   install -m 700 "$rbw_tmpdir/rbw-${version}-aarch64-linux-android/rbw-agent" "$rbw_tmpdir/rbw-agent"
   RBW_BIN="$rbw_tmpdir/rbw"
+  export RBW_AGENT="$rbw_tmpdir/rbw-agent"
   export PATH="$rbw_tmpdir:$PATH"
 }
 
