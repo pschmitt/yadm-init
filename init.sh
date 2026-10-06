@@ -559,6 +559,11 @@ then
     YADM_HOST="$(__detect_termux_host)"
   fi
 
+  if command -v termux-info >/dev/null 2>&1
+  then
+    export RBW_PROFILE='yadm-init'
+  fi
+
   install_deps
   install_yadm
 

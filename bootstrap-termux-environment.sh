@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 
 export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+export RBW_PROFILE='yadm-init'
 readonly blobs_base_url='https://blobs.brkn.lol'
 readonly bw_item='blobs.brkn.lol private downloads'
 readonly bw_username='termux-cache'
