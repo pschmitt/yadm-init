@@ -172,11 +172,11 @@ __rbw_release_target() {
 install_rbw() {
   local tmpdir target tag version url
 
-  if command -v rbw >/dev/null 2>&1
+  # Termux Home Manager may expose a generated launcher even when rbw is not
+  # installed in the package tree. Prefer the self-contained Android release
+  # in that environment so PATH cannot select a dangling launcher.
+  if ! command -v termux-info >/dev/null 2>&1 && command -v rbw >/dev/null 2>&1
   then
-    # A generated Home Manager launcher can exist on PATH even when the
-    # underlying program is absent. Check that the command runs before
-    # treating it as an installed rbw binary.
     if rbw --help >/dev/null 2>&1
     then
       return 0
