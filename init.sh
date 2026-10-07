@@ -175,10 +175,11 @@ install_rbw() {
 
   # Termux Home Manager may expose a generated launcher even when rbw is not
   # installed in the package tree. Prefer the self-contained Android release
-  # in that environment so PATH cannot select a dangling launcher.
+  # there so PATH cannot select a dangling launcher. On other hosts, only
+  # reuse a system rbw if it exposes the fork-specific `termux` command.
   if ! command -v termux-info >/dev/null 2>&1 && command -v rbw >/dev/null 2>&1
   then
-    if rbw --help >/dev/null 2>&1
+    if rbw termux --help >/dev/null 2>&1
     then
       RBW_BIN="$(command -v rbw)"
       return 0
