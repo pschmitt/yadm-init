@@ -8,8 +8,9 @@ curl -L yadm.brkn.lol | bash -s -- --nixpp
 ```
 
 Use `--nixpp` to download and verify the signed APT prefix and managed Zsh
-generation before replacing the Termux package tree. Then run the existing
-yadm clone and bootstrap.
+generation for the detected device before replacing the Termux package tree.
+The current profiles cover Mi Pad 4 (`mp4`), Zenfone 10 (`zf10`), and Lenovo
+Tab P11 (`p11`). Then run the existing yadm clone and bootstrap.
 The ordinary `curl -L yadm.brkn.lol | bash` path for other hosts is unchanged.
 Both paths use Philipp's `pschmitt/rbw` fork rather than the official `bw`
 CLI. On non-Termux hosts, an existing `rbw` is reused only if it exposes the

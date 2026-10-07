@@ -8,7 +8,8 @@ readonly blobs_base_url='https://blobs.brkn.lol'
 readonly bw_item='blobs.brkn.lol private downloads'
 readonly bw_username='termux-cache'
 readonly nixpp_binary_name='nixpp-aarch64-latest'
-readonly nixpp_channel_name='termux-nix-cache-aarch64-latest.manifest'
+readonly nixpp_channel_prefix='termux-nix-cache-aarch64'
+nixpp_channel_name=''
 readonly nixpp_cache_url="${blobs_base_url}/private/termux/cache"
 readonly nixpp_cache_public_key='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//WWD0='
 readonly files_dir="${PREFIX%/usr}"
@@ -588,6 +589,16 @@ main() {
     fail "The published environment requires Termux aarch64; found $architecture"
     return 1
   fi
+
+  case "${YADM_HOST:-}" in
+    mp4 | zf10 | p11)
+      nixpp_channel_name="${nixpp_channel_prefix}-${YADM_HOST}-latest.manifest"
+      ;;
+    *)
+      fail "No published Termux host profile for ${YADM_HOST:-unknown}"
+      return 1
+      ;;
+  esac
 
   info "Detected Termux aarch64; $(df -h "$HOME" | awk 'END { print $4 " available on app storage" }')"
   confirm_prefix_replacement || return

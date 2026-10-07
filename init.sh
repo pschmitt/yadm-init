@@ -337,6 +337,7 @@ __detect_termux_host() {
     clover) echo "mp4" ;;
     redfin) echo "px5" ;;
     lynx) echo "p7a" ;;
+    grizzly) echo "p11" ;;
     ASUS_AI2302) echo "zf10" ;;
   esac
 }
@@ -584,6 +585,17 @@ then
       echo '--nixpp is only supported inside the official Termux app' >&2
       exit 1
     fi
+
+    if [[ -z "${YADM_HOST:-}" ]]
+    then
+      YADM_HOST=$(__detect_termux_host)
+    fi
+    if [[ "$YADM_HOST" != mp4 && "$YADM_HOST" != zf10 && "$YADM_HOST" != p11 ]]
+    then
+      echo "--nixpp does not have a host profile for this Termux device: ${YADM_HOST:-unknown}" >&2
+      exit 1
+    fi
+    export YADM_HOST
 
     set -o pipefail
     curl -fsSL https://raw.githubusercontent.com/pschmitt/yadm-init/main/bootstrap-termux-environment.sh |
