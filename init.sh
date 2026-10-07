@@ -404,7 +404,7 @@ yadm_deinit() {
   # Delete tracked files
   local branch
   local file
-  branch=$(yadm branch --show-current || true)
+  branch=$(yadm branch --show-current 2>/dev/null || true)
 
   if [[ -n "$branch" ]]
   then
