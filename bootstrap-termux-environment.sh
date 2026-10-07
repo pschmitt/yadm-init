@@ -491,8 +491,10 @@ fi
 
 if [ "$run_yadm" = 1 ]; then
   export YADM_TERMUX_ARCHIVE_READY=1
+  export YADM_INIT_NIXPP=1
   if ! "$PREFIX/bin/bash" -lc 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'; then
     unset YADM_TERMUX_ARCHIVE_READY
+    unset YADM_INIT_NIXPP
     "$toybox" rm -rf "$tmpdir"
     echo 'The Termux environment is installed, but yadm setup did not finish.' >&2
     echo "Your previous package tree is preserved at: $backup" >&2
@@ -502,6 +504,7 @@ if [ "$run_yadm" = 1 ]; then
     exit 1
   fi
   unset YADM_TERMUX_ARCHIVE_READY
+  unset YADM_INIT_NIXPP
   echo 'Termux and yadm setup are complete.' >&2
 else
   echo 'The Termux archives are installed. Yadm setup was skipped.' >&2

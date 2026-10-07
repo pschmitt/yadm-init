@@ -429,18 +429,49 @@ yadm_deinit() {
   rm -rf "${HOME}/.local/share/yadm" "${HOME}/.gitmodules"
 }
 
+yadm_set_local_classes() {
+  local yadm_bin="$1"
+  local class classes
+  local classes_to_add=()
+
+  if ! command -v termux-info >/dev/null 2>&1
+  then
+    return 0
+  fi
+
+  classes_to_add+=(termux)
+  if ((NIXPP_MODE))
+  then
+    classes_to_add+=(nixpp)
+  else
+    classes_to_add+=(zinit)
+  fi
+
+  for class in "${classes_to_add[@]}"
+  do
+    classes="$(bash "$yadm_bin" config --get-all local.class 2>/dev/null || true)"
+    if ! grep -Fqx -- "$class" <<< "$classes"
+    then
+      bash "$yadm_bin" config --add local.class "$class"
+    fi
+  done
+}
+
 yadm_init() {
-  local url log
+  local url log yadm_bin
   local urls=(
     "git@github.com:pschmitt/yadm-config.git"
     "ssh://git@ssh.github.com:443/pschmitt/yadm-config.git"
     "ssh://git@git.brkn.lol/pschmitt/yadm-config.git"
     "https://github.com/pschmitt/yadm-config.git"
   )
+  yadm_bin="$(__get_tmpdir)/yadm"
 
   if [[ -n "$LOCAL_REPO" ]]
   then
-    run_quiet "Cloning dotfiles" bash "$(__get_tmpdir)/yadm" clone -f --bootstrap "$LOCAL_REPO"
+    run_quiet "Cloning dotfiles" bash "$yadm_bin" clone -f --no-bootstrap "$LOCAL_REPO"
+    yadm_set_local_classes "$yadm_bin"
+    "${HOME}/.config/yadm/bootstrap"
   else
     # Trying each remote in turn is expected to fail a few times before
     # one works (e.g. no outbound SSH on this network) -- that's not a
@@ -452,9 +483,10 @@ yadm_init() {
     for url in "${urls[@]}"
     do
       if GIT_SSH_COMMAND="ssh -i ~/.ssh/id_yadm_init -F /dev/null" \
-        bash "$(__get_tmpdir)/yadm" clone -f --no-bootstrap "$url" >>"$log" 2>&1
+        bash "$yadm_bin" clone -f --no-bootstrap "$url" >>"$log" 2>&1
       then
         rm -f "$log"
+        yadm_set_local_classes "$yadm_bin"
         "${HOME}/.config/yadm/bootstrap"
         return 0
       fi
@@ -479,6 +511,10 @@ then
   cd "$HOME" || return 9
 
   NIXPP_MODE=0
+  if [[ "${YADM_INIT_NIXPP:-0}" == 1 ]]
+  then
+    NIXPP_MODE=1
+  fi
   nixpp_args=()
   nixpp_incompatible_args=0
 
@@ -535,7 +571,7 @@ then
     exec < /dev/tty
   fi
 
-  if ((NIXPP_MODE))
+  if ((NIXPP_MODE)) && [[ "${YADM_TERMUX_ARCHIVE_READY:-}" != 1 ]]
   then
     if ((nixpp_incompatible_args))
     then
