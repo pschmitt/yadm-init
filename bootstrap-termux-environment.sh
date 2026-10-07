@@ -455,19 +455,32 @@ if ! LD_PRELOAD="$prefix/lib/libtermux-exec.so" "$prefix/bin/bash" -c 'command -
   exit 1
 fi
 
-if ! PREFIX="$prefix" LD_PRELOAD="$prefix/lib/libtermux-exec.so" "$prefix/bin/ssh-keygen" -A; then
-  "$toybox" rm -rf "$prefix"
-  "$toybox" mv "$backup" "$prefix"
-  echo 'Could not generate device-specific SSH host keys; restored the previous prefix' >&2
-  exit 1
-fi
-
 export PREFIX="$files_dir/usr"
 export HOME="$files_dir/home"
 export TMPDIR="$PREFIX/tmp"
 export PATH="$PREFIX/bin:/system/bin"
 export LD_PRELOAD="$PREFIX/lib/libtermux-exec.so"
 cd "$HOME"
+
+second_stage_fallback="$PREFIX/etc/profile.d/01-termux-bootstrap-second-stage-fallback.sh"
+if [ -f "$second_stage_fallback" ]; then
+  echo 'Completing Termux first-run package setup.' >&2
+  if ! "$PREFIX/bin/bash" -c '. "$PREFIX/etc/profile.d/01-termux-bootstrap-second-stage-fallback.sh"'; then
+    "$toybox" rm -rf "$prefix"
+    "$toybox" mv "$backup" "$prefix"
+    "$toybox" rm -rf "$tmpdir"
+    echo 'Termux first-run setup failed; restored the previous package tree' >&2
+    exit 1
+  fi
+fi
+
+if ! "$PREFIX/bin/ssh-keygen" -A; then
+  "$toybox" rm -rf "$prefix"
+  "$toybox" mv "$backup" "$prefix"
+  "$toybox" rm -rf "$tmpdir"
+  echo 'Could not generate device-specific SSH host keys; restored the previous package tree' >&2
+  exit 1
+fi
 
 if ! "$PREFIX/bin/bash" "$tmpdir/native-package/bootstrap.sh" install "$native_archive" "$native_sha256"; then
   "$toybox" rm -rf "$tmpdir"
