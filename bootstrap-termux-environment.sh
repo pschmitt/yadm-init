@@ -506,6 +506,84 @@ if [ "$run_yadm" = 1 ]; then
   fi
   unset YADM_TERMUX_ARCHIVE_READY
   unset YADM_INIT_NIXPP
+
+  if ! "$PREFIX/bin/bash" -s <<'INSTALL_TERMUX_HOST_KEYS'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+case "${YADM_HOST:-}" in
+  mp4 | zf10 | p11)
+    ;;
+  *)
+    printf 'Cannot restore SSH host keys for unsupported Termux host: %s\n' "${YADM_HOST:-unknown}" >&2
+    exit 1
+    ;;
+esac
+
+generation=$(readlink -f "$HOME/.local/share/termux-native/current")
+ciphertext="$generation/home/.local/share/termux-native/ssh-host-keys.sops.yaml"
+sops="$generation/bin/sops"
+ssh_to_age="$generation/bin/ssh-to-age"
+if [[ ! -s "$ciphertext" || ! -x "$sops" || ! -x "$ssh_to_age" ]]; then
+  printf 'The managed generation is missing the encrypted SSH host keys or SOPS tools.\n' >&2
+  exit 1
+fi
+if [[ ! -s "$HOME/.ssh/id_ed25519" ]]; then
+  printf "The per-host SSH identity is missing; cannot decrypt this host's keys.\n" >&2
+  exit 1
+fi
+
+age_key=$("$ssh_to_age" --private-key -i "$HOME/.ssh/id_ed25519")
+if [[ -z "$age_key" ]]; then
+  printf 'Could not derive the SOPS identity from the per-host SSH key.\n' >&2
+  exit 1
+fi
+umask 077
+key_stage=$(mktemp -d "$PREFIX/tmp/termux-host-keys.XXXXXXXX")
+cleanup_host_keys() {
+  rm -rf -- "$key_stage"
+}
+trap cleanup_host_keys EXIT
+
+for type in ed25519 rsa; do
+  private_key_path='["ssh"]["host_keys"]["'"$type"'"]["privkey"]'
+  public_key_path='["ssh"]["host_keys"]["'"$type"'"]["pubkey"]'
+  SOPS_AGE_KEY="$age_key" "$sops" decrypt \
+    --extract "$private_key_path" \
+    "$ciphertext" > "$key_stage/ssh_host_${type}_key"
+  SOPS_AGE_KEY="$age_key" "$sops" decrypt \
+    --extract "$public_key_path" \
+    "$ciphertext" > "$key_stage/ssh_host_${type}_key.pub"
+  chmod 0600 "$key_stage/ssh_host_${type}_key"
+  chmod 0644 "$key_stage/ssh_host_${type}_key.pub"
+  "$PREFIX/bin/ssh-keygen" -y -f "$key_stage/ssh_host_${type}_key" > "$key_stage/derived_${type}.pub"
+  awk '{ print $1, $2 }' "$key_stage/ssh_host_${type}_key.pub" > "$key_stage/expected_${type}.pub"
+  awk '{ print $1, $2 }' "$key_stage/derived_${type}.pub" > "$key_stage/actual_${type}.pub"
+  if ! cmp -s "$key_stage/expected_${type}.pub" "$key_stage/actual_${type}.pub"; then
+    printf 'The encrypted %s SSH host key pair does not match.\n' "$type" >&2
+    exit 1
+  fi
+done
+
+for type in ed25519 rsa; do
+  mv -f "$key_stage/ssh_host_${type}_key" "$PREFIX/etc/ssh/ssh_host_${type}_key"
+  mv -f "$key_stage/ssh_host_${type}_key.pub" "$PREFIX/etc/ssh/ssh_host_${type}_key.pub"
+done
+printf 'Restored the existing SSH host keys from the encrypted host configuration.\n' >&2
+INSTALL_TERMUX_HOST_KEYS
+  then
+    unset YADM_TERMUX_ARCHIVE_READY
+    unset YADM_INIT_NIXPP
+    "$toybox" rm -rf "$tmpdir"
+    echo 'The Termux environment is installed, but SSH host keys could not be restored.' >&2
+    echo "Your previous package tree is preserved at: $backup" >&2
+    echo 'Restore the previous package tree from Termux with:' >&2
+    echo "  /system/bin/toybox rm -rf '$prefix'" >&2
+    echo "  /system/bin/toybox mv '$backup' '$prefix'" >&2
+    exit 1
+  fi
+
   echo 'Termux and yadm setup are complete.' >&2
 else
   echo 'The Termux archives are installed. Yadm setup was skipped.' >&2
@@ -713,6 +791,20 @@ main() {
   then
     fail 'The managed Termux generation failed its preflight check'
     return 1
+  fi
+
+  if [[ "$run_yadm" == 1 ]]
+  then
+    if ! tar -xOf "$native_archive" ./home/.local/share/termux-native/ssh-host-keys.sops.yaml \
+      > "$tmpdir/ssh-host-keys.sops.yaml" ||
+      ! grep -Eq 'privkey:[[:space:]]*ENC\[AES256_GCM' "$tmpdir/ssh-host-keys.sops.yaml" ||
+      ! grep -Eq 'pubkey:[[:space:]]*ENC\[AES256_GCM' "$tmpdir/ssh-host-keys.sops.yaml"
+    then
+      fail 'The managed generation does not contain encrypted SSH host keys for this device.'
+      info 'No Termux package changes have been made. Add the preserved host keys to SOPS, rebuild the archive, and retry.'
+      return 1
+    fi
+    success 'Encrypted SSH host keys are present in the generation'
   fi
 
   step 'Prepare the new environment'

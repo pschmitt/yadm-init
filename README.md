@@ -90,7 +90,9 @@ For help, pass `--nixpp --help`. `--no-color` is also available; setting
 The installer unlocks the Bitwarden item for private download access, downloads
 the small `nixpp` verifier, then fetches the signed Termux APT prefix and
 Nix-managed shell generation. It validates both outputs before switching the
-package tree and activating the generation.
+package tree and activating the generation. After yadm installs the device's
+personal SSH identity, the installer restores the existing SSH server keys
+from the encrypted per-host SOPS file in that generation.
 
 The outputs contain no private yadm dotfiles or Bitwarden credentials. The
 installer checks Termux's stock download and archive tools without upgrading
