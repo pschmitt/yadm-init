@@ -2,6 +2,7 @@
 
 usage() {
   echo "Usage: $(basename "$0") [--nixpp [--archive-only] [--yes] [--no-color]] [--local DIR] [--host NAME] [BW_PASSWORD]"
+  echo "Optional environment variables: RBW_EMAIL, RBW_MASTER_PASSWORD, RBW_TOTP"
 }
 
 # Bash's own `read` builtin, not pinentry -- see unlock_rbw for why.
@@ -246,7 +247,7 @@ unlock_rbw() {
 # login (typo, stale/mistyped TOTP) instead of aborting the whole
 # bootstrap over one bad keystroke.
 login_rbw() {
-  local attempt
+  local attempt password totp
 
   # Lets a re-run (after an earlier step failed) skip straight past the
   # prompts instead of asking again for no reason.
@@ -256,30 +257,36 @@ login_rbw() {
     return 0
   fi
 
-  for attempt in 1 2 3
+  password="${RBW_MASTER_PASSWORD:-}"
+  totp="${RBW_TOTP:-}"
+  unset RBW_MASTER_PASSWORD RBW_TOTP
+
+  for attempt in 1 2
   do
-    if [[ -z "$RBW_MASTER_PASSWORD" ]]
+    if [[ -z "$password" ]]
     then
-      RBW_MASTER_PASSWORD=$(query_secret "Bitwarden password")
+      password=$(query_secret "Bitwarden password")
     fi
-    if [[ -z "$RBW_TOTP" ]]
+    if ((attempt == 2))
     then
-      RBW_TOTP=$(query_secret "Bitwarden TOTP code (blank if none)") || true
+      echo "Bitwarden authentication failed; enter a fresh TOTP to retry once" >&2
+      totp=$(query_secret "Bitwarden TOTP code (blank if none)") || true
+    elif [[ -z "$totp" ]]
+    then
+      totp=$(query_secret "Bitwarden TOTP code (blank if none)") || true
     fi
 
-    if unlock_rbw "$RBW_MASTER_PASSWORD" "$RBW_TOTP"
+    if unlock_rbw "$password" "$totp"
     then
+      unset password totp
       return 0
     fi
 
-    # Both get cleared so a bad value is never silently reused - the next
-    # loop iteration always re-prompts for both.
-    RBW_MASTER_PASSWORD=""
-    RBW_TOTP=""
-    echo "Login attempt ${attempt}/3 failed, let's try again" >&2
+    unset totp
   done
 
-  echo "Too many failed Bitwarden login attempts, giving up" >&2
+  unset password totp
+  echo "Bitwarden login failed after one fresh-TOTP retry" >&2
   return 1
 }
 

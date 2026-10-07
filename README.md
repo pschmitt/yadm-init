@@ -49,6 +49,23 @@ terminal:
 curl -L yadm.brkn.lol | bash -s -- --nixpp --yes
 ```
 
+For unattended runs, export `RBW_EMAIL`, `RBW_MASTER_PASSWORD`, and
+`RBW_TOTP` before running the command. For example, on a machine with the
+unlocked `rbw` vault:
+
+```sh
+export RBW_EMAIL="$(rbw get bitwarden.com -f username)"
+export RBW_MASTER_PASSWORD="$(rbw get bitwarden.com -f password)"
+export RBW_TOTP="$(rbw totp bitwarden.com)"
+curl -L yadm.brkn.lol | bash -s -- --nixpp --yes
+unset RBW_MASTER_PASSWORD RBW_TOTP RBW_EMAIL
+```
+
+The bootstrap consumes these values for the initial login attempt and unsets
+the environment variables. If authentication fails, it asks for a fresh TOTP
+and retries once, which helps when a code expires during setup. Avoid putting
+the password directly in a command line or shell history.
+
 For help, pass `--nixpp --help`. `--no-color` is also available; setting
 `NO_COLOR` is usually more convenient for the `curl | bash` command.
 
@@ -83,16 +100,3 @@ phone.
 This release is for the official Termux app on AArch64. The cache download
 requires the configured Bitwarden access. `nixpp` verifies signed Nix cache
 outputs; it does not evaluate Home Manager or install arbitrary Nix packages.
-
-## Other setup paths
-
-To preload only the older zinit cache before using the existing initializer:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/pschmitt/yadm-init/main/preseed-termux-cache.sh | bash
-curl -L yadm.brkn.lol | bash
-```
-
-That path does not replace the Termux package tree. The regular
-`curl -L yadm.brkn.lol | bash` command remains available for existing hosts and
-continues to use its normal Ansible bootstrap.

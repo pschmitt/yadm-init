@@ -166,6 +166,14 @@ Options:
 
   curl -fsSL https://raw.githubusercontent.com/pschmitt/yadm-init/main/bootstrap-termux-environment.sh | bash
 EOF
+  cat <<'EOF'
+
+Optional Bitwarden environment variables for unattended setup:
+  RBW_EMAIL, RBW_MASTER_PASSWORD, and RBW_TOTP
+
+The password and TOTP are consumed for one login attempt, then unset. If
+unlock fails, the script prompts for fresh values.
+EOF
 }
 
 confirm_prefix_replacement() {
@@ -264,20 +272,31 @@ login_rbw() {
 
   if "$RBW_BIN" unlocked >/dev/null 2>&1
   then
+    unset RBW_EMAIL RBW_MASTER_PASSWORD RBW_TOTP
     printf 'Bitwarden is already unlocked\n' >&2
     return 0
   fi
 
   email="${RBW_EMAIL:-$("$RBW_BIN" config get email 2>/dev/null || true)}"
+  password="${RBW_MASTER_PASSWORD:-}"
+  totp="${RBW_TOTP:-}"
+  unset RBW_EMAIL RBW_MASTER_PASSWORD RBW_TOTP
   if [[ -z "$email" ]]
   then
     read -r -p 'Bitwarden email: ' email < /dev/tty
   fi
   "$RBW_BIN" config set email "$email"
-  for attempt in 1 2 3
+  unset email
+  for attempt in 1 2
   do
-    password=$(query_secret 'Bitwarden password')
-    totp=$(query_secret 'Bitwarden TOTP code (blank if none)') || true
+    if [[ -z "$password" ]]
+    then
+      password=$(query_secret 'Bitwarden password')
+    fi
+    if ((attempt == 2)) || [[ -z "$totp" ]]
+    then
+      totp=$(query_secret 'Bitwarden TOTP code (blank if none)') || true
+    fi
 
     if printf '%s\n' "$password" | "$RBW_BIN" unlock --stdin --totp "$totp"
     then
@@ -285,11 +304,15 @@ login_rbw() {
       return 0
     fi
 
-    unset password totp
-    printf 'Bitwarden login attempt %s/3 failed\n' "$attempt" >&2
+    unset totp
+    if ((attempt == 1))
+    then
+      printf 'Bitwarden authentication failed; enter a fresh TOTP to retry once\n' >&2
+    fi
   done
 
-  printf 'Too many failed Bitwarden login attempts\n' >&2
+  unset password totp
+  printf 'Bitwarden login failed after one fresh-TOTP retry\n' >&2
   return 1
 }
 
