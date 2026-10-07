@@ -171,8 +171,9 @@ EOF
 Optional Bitwarden environment variables for unattended setup:
   RBW_EMAIL, RBW_MASTER_PASSWORD, and RBW_TOTP
 
-The password and TOTP are consumed for one login attempt, then unset. If
-unlock fails, the script prompts for fresh values.
+The environment values are consumed for the first login attempt, then unset.
+If unlock fails, the script keeps the password in memory and prompts once for
+a fresh TOTP before retrying.
 EOF
 }
 
