@@ -7,9 +7,9 @@ shell prompt. Then paste this command **inside the Termux app**:
 curl -L yadm.brkn.lol | bash -s -- --nixpp
 ```
 
-`--nixpp` fetches the prepared Termux installer from this repository. It
-verifies the signed APT prefix and managed Zsh generation before replacing the
-Termux package tree, then runs the existing yadm clone and bootstrap.
+Use `--nixpp` to download and verify the signed APT prefix and managed Zsh
+generation before replacing the Termux package tree. Then run the existing
+yadm clone and bootstrap.
 The ordinary `curl -L yadm.brkn.lol | bash` path for other hosts is unchanged.
 Both paths use Philipp's `pschmitt/rbw` fork rather than the official `bw`
 CLI. On non-Termux hosts, an existing `rbw` is reused only if it exposes the

@@ -50,7 +50,7 @@ step() {
 
 banner() {
   printf '%s%sTermux environment setup%s\n' "$color_cyan" "$color_bold" "$color_reset" >&2
-  printf 'Downloads and verifies the prepared AArch64 environment, then starts setup.\n' >&2
+  printf 'Download and verify the prepared AArch64 environment, then start setup.\n' >&2
 }
 
 success() {
