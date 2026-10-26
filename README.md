@@ -70,6 +70,10 @@ the environment variables. If authentication fails, it asks for a fresh TOTP
 and retries once, which helps when a code expires during setup. Avoid putting
 the password directly in a command line or shell history.
 
+When the Termux environment bootstrap starts yadm setup, it reuses the already
+unlocked `rbw` agent across the package-prefix swap. This avoids a second
+Bitwarden login prompt during a single `--nixpp` run.
+
 For help, pass `--nixpp --help`. `--no-color` is also available; setting
 `NO_COLOR` is usually more convenient for the `curl | bash` command.
 
@@ -93,6 +97,12 @@ Nix-managed shell generation. It validates both outputs before switching the
 package tree and activating the generation. After yadm installs the device's
 personal SSH identity, the installer restores the existing SSH server keys
 from the encrypted per-host SOPS file in that generation.
+
+If the existing home directory already has `~/.config/nixpp/config.toml` and
+`~/.aws/credentials`, the bootstrap first tries the configured S3 substituter.
+On a clean install those files are not available yet, so it falls back to the
+authenticated HTTPS bootstrap mirror. The managed generation installs the
+default cache URL and trusted public keys for later direct S3 fetches.
 
 The outputs contain no private yadm dotfiles or Bitwarden credentials. The
 installer checks Termux's stock download and archive tools without upgrading

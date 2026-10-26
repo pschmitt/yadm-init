@@ -173,6 +173,16 @@ __rbw_release_target() {
 install_rbw() {
   local tmpdir target tag version url
 
+  # The Termux nixpp bootstrap starts an rbw agent before swapping the prefix.
+  # Reuse it so the nested yadm initializer does not prompt for vault
+  # credentials a second time. Its old-prefix path remains available until
+  # the bootstrap removes the package-tree backup after yadm setup succeeds.
+  if [[ -n "${RBW_BIN:-}" && -x "$RBW_BIN" &&
+    -n "${RBW_AGENT:-}" && -x "$RBW_AGENT" ]]
+  then
+    return 0
+  fi
+
   # Termux Home Manager may expose a generated launcher even when rbw is not
   # installed in the package tree. Prefer the self-contained Android release
   # there so PATH cannot select a dangling launcher. On other hosts, only

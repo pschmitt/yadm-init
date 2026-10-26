@@ -94,8 +94,20 @@ fetch_cache_output() {
   local description="$1"
   local store_path="$2"
   local destination="$3"
+  local nixpp_config="${NIXPP_CONFIG:-$HOME/.config/nixpp/config.toml}"
+  local aws_credentials="${AWS_SHARED_CREDENTIALS_FILE:-$HOME/.aws/credentials}"
 
   info "Downloading $description; transfer progress appears when available"
+  if [[ -r "$nixpp_config" && -r "$aws_credentials" ]] &&
+    "$tmpdir/nixpp" fetch \
+      --store-path "$store_path" \
+      --destination "$destination"
+  then
+    success "$description downloaded and verified from the configured S3 cache"
+    return 0
+  fi
+
+  info 'Direct S3 cache unavailable; using the authenticated bootstrap mirror.'
   if ! "$tmpdir/nixpp" fetch \
     --cache "$nixpp_cache_url" \
     --store-path "$store_path" \
@@ -265,6 +277,7 @@ install_rbw() {
   install -m 700 "$rbw_tmpdir/rbw-${version}-aarch64-linux-android/rbw" "$rbw_tmpdir/rbw"
   install -m 700 "$rbw_tmpdir/rbw-${version}-aarch64-linux-android/rbw-agent" "$rbw_tmpdir/rbw-agent"
   RBW_BIN="$rbw_tmpdir/rbw"
+  export RBW_BIN
   export RBW_AGENT="$rbw_tmpdir/rbw-agent"
   export PATH="$rbw_tmpdir:$PATH"
 }
@@ -443,6 +456,19 @@ if ! "$toybox" mv "$prefix" "$backup"; then
   exit 1
 fi
 
+case "${RBW_BIN:-}" in
+  "$prefix"/*)
+    RBW_BIN="$backup/${RBW_BIN#"$prefix"/}"
+    export RBW_BIN
+    ;;
+esac
+case "${RBW_AGENT:-}" in
+  "$prefix"/*)
+    RBW_AGENT="$backup/${RBW_AGENT#"$prefix"/}"
+    export RBW_AGENT
+    ;;
+esac
+
 if ! "$toybox" mv "$stage_prefix" "$prefix"; then
   "$toybox" mv "$backup" "$prefix"
   echo 'Could not install the prepared Termux prefix; restored the previous prefix' >&2
@@ -589,6 +615,7 @@ else
   echo 'The Termux archives are installed. Yadm setup was skipped.' >&2
 fi
 
+unset RBW_BIN RBW_AGENT RBW_PROFILE
 "$toybox" rm -rf "$backup" "$tmpdir"
 echo 'Opening your Zsh session. Type exit to return to Termux.' >&2
 exec "$PREFIX/bin/zsh" -li
