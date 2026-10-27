@@ -98,16 +98,20 @@ fetch_cache_output() {
   local aws_credentials="${AWS_SHARED_CREDENTIALS_FILE:-$HOME/.aws/credentials}"
 
   info "Downloading $description; transfer progress appears when available"
-  if [[ -r "$nixpp_config" && -r "$aws_credentials" ]] &&
-    "$tmpdir/nixpp" fetch \
+  if [[ -r "$nixpp_config" && -r "$aws_credentials" ]]
+  then
+    if "$tmpdir/nixpp" fetch \
       --store-path "$store_path" \
       --destination "$destination"
-  then
-    success "$description downloaded and verified from the configured S3 cache"
-    return 0
+    then
+      success "$description downloaded and verified from the configured S3 cache"
+      return 0
+    fi
+    info 'Direct S3 fetch failed; using the authenticated bootstrap mirror.'
+  else
+    info 'Direct S3 config or credentials are not installed yet; using the authenticated bootstrap mirror.'
   fi
 
-  info 'Direct S3 cache unavailable; using the authenticated bootstrap mirror.'
   if ! "$tmpdir/nixpp" fetch \
     --cache "$nixpp_cache_url" \
     --store-path "$store_path" \
@@ -616,6 +620,19 @@ INSTALL_TERMUX_HOST_KEYS
     echo 'Restore the previous package tree from Termux with:' >&2
     echo "  /system/bin/toybox rm -rf '$prefix'" >&2
     echo "  /system/bin/toybox mv '$backup' '$prefix'" >&2
+    exit 1
+  fi
+
+  generation=$(readlink -f "$HOME/.local/share/termux-native/current")
+  if ! TERMUX_GENERATION="$generation" \
+    PATH="$generation/bin:$PATH" \
+    "$PREFIX/bin/bash" "$generation/setup-nixpp-cache.sh" "$generation"
+  then
+    unset YADM_TERMUX_ARCHIVE_READY
+    unset YADM_INIT_NIXPP
+    "$toybox" rm -rf "$tmpdir"
+    echo 'The Termux environment is installed, but Niks3 credentials could not be configured.' >&2
+    echo "Your previous package tree is preserved at: $backup" >&2
     exit 1
   fi
 

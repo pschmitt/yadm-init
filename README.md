@@ -98,11 +98,12 @@ package tree and activating the generation. After yadm installs the device's
 personal SSH identity, the installer restores the existing SSH server keys
 from the encrypted per-host SOPS file in that generation.
 
-If the existing home directory already has `~/.config/nixpp/config.toml` and
+If the existing home directory already has the managed nixpp config and
 `~/.aws/credentials`, the bootstrap first tries the configured S3 substituter.
-On a clean install those files are not available yet, so it falls back to the
-authenticated HTTPS bootstrap mirror. The managed generation installs the
-default cache URL and trusted public keys for later direct S3 fetches.
+On a clean install those are provisioned after yadm restores the device's
+personal SSH identity, so the initial prefix and shell generation come from the
+authenticated HTTPS bootstrap mirror. Later nixpp fetches and updates use the
+configured S3 cache directly.
 
 The outputs contain no private yadm dotfiles or Bitwarden credentials. The
 installer checks Termux's stock download and archive tools without upgrading
