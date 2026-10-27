@@ -509,7 +509,9 @@ if ! "$PREFIX/bin/ssh-keygen" -A; then
   exit 1
 fi
 
-if ! "$PREFIX/bin/bash" "$tmpdir/native-package/bootstrap.sh" install "$native_archive" "$native_sha256"; then
+if ! TERMUX_NATIVE_SKIP_SOPS_SETUP=1 \
+  "$PREFIX/bin/bash" "$tmpdir/native-package/bootstrap.sh" \
+  install "$native_archive" "$native_sha256"; then
   "$toybox" rm -rf "$tmpdir"
   echo 'The package tree is active, but the managed Termux generation could not be installed.' >&2
   echo "Your previous package tree is preserved at: $backup" >&2
@@ -597,6 +599,13 @@ for type in ed25519 rsa; do
   mv -f "$key_stage/ssh_host_${type}_key.pub" "$PREFIX/etc/ssh/ssh_host_${type}_key.pub"
 done
 printf 'Restored the existing SSH host keys from the encrypted host configuration.\n' >&2
+generation=$(readlink -f "$HOME/.local/share/termux-native/current")
+TERMUX_GENERATION="$generation" \
+  PATH="$generation/bin:$PATH" \
+  "$PREFIX/bin/bash" "$generation/setup-known-hosts.sh" "$generation"
+TERMUX_GENERATION="$generation" \
+  PATH="$generation/bin:$PATH" \
+  "$PREFIX/bin/bash" "$generation/setup-gpg-keys.sh" "$generation"
 INSTALL_TERMUX_HOST_KEYS
   then
     unset YADM_TERMUX_ARCHIVE_READY
