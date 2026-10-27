@@ -71,8 +71,10 @@ and retries once, which helps when a code expires during setup. Avoid putting
 the password directly in a command line or shell history.
 
 When the Termux environment bootstrap starts yadm setup, it reuses the already
-unlocked `rbw` agent across the package-prefix swap. This avoids a second
-Bitwarden login prompt during a single `--nixpp` run.
+unlocked `rbw` agent across the package-prefix swap. It keeps rbw's Android
+agent socket directory (derived from `TMPDIR`) pointed at the relocated old
+prefix during yadm setup. This avoids a second Bitwarden login prompt during a
+single `--nixpp` run.
 
 For help, pass `--nixpp --help`. `--no-color` is also available; setting
 `NO_COLOR` is usually more convenient for the `curl | bash` command.

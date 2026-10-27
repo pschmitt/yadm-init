@@ -448,7 +448,14 @@ run_yadm="$3"
 native_archive="$4"
 native_sha256="$5"
 backup="$files_dir/usr.bootstrap-backup"
+rbw_runtime_tmpdir="${6:-$prefix/tmp}"
 toybox='/system/bin/toybox'
+
+case "$rbw_runtime_tmpdir" in
+  "$prefix"/*)
+    rbw_runtime_tmpdir="$backup/${rbw_runtime_tmpdir#"$prefix"/}"
+    ;;
+esac
 
 if [ -e "$backup" ]; then
   echo "A previous prefix backup exists at $backup; refusing to replace it" >&2
@@ -525,7 +532,12 @@ fi
 if [ "$run_yadm" = 1 ]; then
   export YADM_TERMUX_ARCHIVE_READY=1
   export YADM_INIT_NIXPP=1
-  if ! "$PREFIX/bin/bash" -lc 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'; then
+  # rbw derives its agent socket from TMPDIR on Android. Keep the old prefix's
+  # relocated temp directory while yadm-init talks to the already-unlocked
+  # agent; the new prefix has a different socket path.
+  if ! RBW_BIN="${RBW_BIN:-}" RBW_AGENT="${RBW_AGENT:-}" \
+    RBW_PROFILE="${RBW_PROFILE:-yadm-init}" TMPDIR="$rbw_runtime_tmpdir" \
+    "$PREFIX/bin/bash" -lc 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'; then
     unset YADM_TERMUX_ARCHIVE_READY
     unset YADM_INIT_NIXPP
     "$toybox" rm -rf "$tmpdir"
@@ -874,7 +886,7 @@ main() {
     info 'After the switch, y.brkn.lol will clone your private yadm config and apply the Termux setup'
   fi
   success 'Ready to switch to the verified environment'
-  exec /system/bin/sh "$tmpdir/swap-prefix.sh" "$stage_prefix" "$tmpdir" "$run_yadm" "$native_archive" "$native_sha256"
+  exec /system/bin/sh "$tmpdir/swap-prefix.sh" "$stage_prefix" "$tmpdir" "$run_yadm" "$native_archive" "$native_sha256" "${TMPDIR:-$PREFIX/tmp}"
 }
 
 if [[ "${BASH_SOURCE[0]:-}" == "$0" || -z "${BASH_SOURCE[0]:-}" ]]

@@ -175,8 +175,9 @@ install_rbw() {
 
   # The Termux nixpp bootstrap starts an rbw agent before swapping the prefix.
   # Reuse it so the nested yadm initializer does not prompt for vault
-  # credentials a second time. Its old-prefix path remains available until
-  # the bootstrap removes the package-tree backup after yadm setup succeeds.
+  # credentials a second time. The swap helper keeps TMPDIR pointed at the
+  # relocated old-prefix temp directory during yadm setup, preserving rbw's
+  # Android agent socket path until the package-tree backup is removed.
   if [[ -n "${RBW_BIN:-}" && -x "$RBW_BIN" &&
     -n "${RBW_AGENT:-}" && -x "$RBW_AGENT" ]]
   then
