@@ -317,8 +317,8 @@ cleanup_yadm_init_key() {
 get_ssh_key() {
   local item="${RBW_YADM_INIT_ITEM:-yadm-init-deploy-key}"
 
-  # shellcheck disable=SC2174
-  mkdir -m 700 -p "${HOME}/.ssh"
+  mkdir -p "${HOME}/.ssh/agent"
+  chmod 700 "${HOME}/.ssh" "${HOME}/.ssh/agent"
   "$RBW_BIN" get "$item" -f private_key > "${HOME}/.ssh/id_yadm_init"
   "$RBW_BIN" get "$item" -f public_key > "${HOME}/.ssh/id_yadm_init.pub"
   chmod 400 "${HOME}"/.ssh/id_yadm_init{,.pub}
@@ -326,8 +326,9 @@ get_ssh_key() {
   # Add key to agent to avoid being prompted multiple times
   if command -v ssh-add >/dev/null
   then
-    if [[ -z "$SSH_AGENT_PID" ]]
+    if [[ -z "${SSH_AGENT_PID:-}" ]] || ! ssh-add -l >/dev/null 2>&1
     then
+      unset SSH_AUTH_SOCK SSH_AGENT_PID
       eval "$(ssh-agent)"
     fi
     ssh-add "${HOME}/.ssh/id_yadm_init"
