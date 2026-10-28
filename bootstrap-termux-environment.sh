@@ -10,7 +10,8 @@ readonly nixpp_binary_name='nixpp-aarch64-latest'
 readonly nixpp_channel_prefix='termux-nix-cache-aarch64'
 nixpp_channel_name=''
 readonly nixpp_s3_substituter='s3://nix-cache-brkn-lol?endpoint=s3.openstack.de-west-01.wiit-cloud.io&region=default&scheme=https&profile=niks3&priority=30'
-readonly nixpp_s3_public_key='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//WWD0='
+readonly nixpp_s3_public_key_rofl10='rofl-10:vYRBSypcO/0NnPsDxgSELIcJotU/LmZ1f6vZUKUmty0='
+readonly nixpp_s3_public_key_rofl13='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//WWD0='
 readonly files_dir="${PREFIX%/usr}"
 rbw_tmpdir=''
 RBW_BIN=''
@@ -77,8 +78,7 @@ fetch_cache_output() {
   info "Downloading $description; transfer progress appears when available"
   if ! NIXPP_CONFIG="$tmpdir/nixpp-bootstrap.toml" "$tmpdir/nixpp" fetch \
     --store-path "$store_path" \
-    --destination "$destination" \
-    --public-key "$nixpp_s3_public_key"
+    --destination "$destination"
   then
     fail "Could not download or verify $description."
     info 'Check the network, Bitwarden access, and Niks3 cache credentials; the current package tree is still active.'
@@ -121,7 +121,7 @@ write_nixpp_bootstrap_config() {
   cat > "$config" <<EOF
 [defaults]
 substituter = "$nixpp_s3_substituter"
-public_keys = ["$nixpp_s3_public_key"]
+public_keys = ["$nixpp_s3_public_key_rofl10", "$nixpp_s3_public_key_rofl13"]
 aws_credentials_command = ["rbw", "get", "--raw", "--exact", "nixpp Niks3 cache"]
 EOF
   chmod 0600 "$config"
