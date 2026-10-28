@@ -103,19 +103,15 @@ color.
 
 ## What gets installed
 
-The installer unlocks the Bitwarden item for private download access, downloads
-the small `nixpp` verifier, then fetches the signed Termux APT prefix and
-Nix-managed shell generation. It validates both outputs before switching the
+The installer unlocks Bitwarden and downloads the first-stage `nixpp`
+verifier, its checksum, and the channel manifest directly from the Niks3 S3
+bucket. It uses the unlocked `rbw` agent for SigV4 authentication, then uses
+nixpp to fetch the signed Termux APT prefix and Nix-managed shell generation
+from the same cache. AWS credentials stay in memory; the bootstrap does not
+write an AWS credentials file. It validates both outputs before switching the
 package tree and activating the generation. After yadm installs the device's
 personal SSH identity, the installer restores the existing SSH server keys
 from the encrypted per-host SOPS file in that generation.
-
-If the existing home directory already has the managed nixpp config and
-`~/.aws/credentials`, the bootstrap first tries the configured S3 substituter.
-On a clean install those are provisioned after yadm restores the device's
-personal SSH identity, so the initial prefix and shell generation come from the
-authenticated HTTPS bootstrap mirror. Later nixpp fetches and updates use the
-configured S3 cache directly.
 
 The outputs contain no private yadm dotfiles or Bitwarden credentials. The
 installer checks Termux's stock download and archive tools without upgrading

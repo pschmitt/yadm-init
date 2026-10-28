@@ -4,14 +4,13 @@ set -Eeuo pipefail
 
 export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 export RBW_PROFILE='yadm-init'
-readonly blobs_base_url='https://blobs.brkn.lol'
-readonly bw_item='blobs.brkn.lol private downloads'
-readonly bw_username='termux-cache'
+readonly nixpp_s3_base_url='https://s3.openstack.de-west-01.wiit-cloud.io/nix-cache-brkn-lol/termux-bootstrap'
+readonly nixpp_s3_credentials_item='nixpp Niks3 cache'
 readonly nixpp_binary_name='nixpp-aarch64-latest'
 readonly nixpp_channel_prefix='termux-nix-cache-aarch64'
 nixpp_channel_name=''
-readonly nixpp_cache_url="${blobs_base_url}/private/termux/cache"
-readonly nixpp_cache_public_key='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//WWD0='
+readonly nixpp_s3_substituter='s3://nix-cache-brkn-lol?endpoint=s3.openstack.de-west-01.wiit-cloud.io&region=default&scheme=https&profile=niks3&priority=30'
+readonly nixpp_s3_public_key='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//WWD0='
 readonly files_dir="${PREFIX%/usr}"
 rbw_tmpdir=''
 RBW_BIN=''
@@ -70,60 +69,62 @@ fail() {
   printf '\n%s✗ %s%s\n' "$color_red$color_bold" "$1" "$color_reset" >&2
 }
 
-download_file() {
-  local description="$1"
-  local netrc_file="$2"
-  local destination="$3"
-  local url="$4"
-  local -a curl_options=(-qfSL --netrc-file "$netrc_file")
-
-  if [[ -t 2 && "${TERM:-}" != dumb ]]
-  then
-    curl_options+=(--progress-bar)
-  else
-    curl_options+=(-s)
-  fi
-  if ! curl "${curl_options[@]}" -o "$destination" "$url"
-  then
-    fail "Could not download $description. Check your network and try again."
-    return 1
-  fi
-}
-
 fetch_cache_output() {
   local description="$1"
   local store_path="$2"
   local destination="$3"
-  local nixpp_config="${NIXPP_CONFIG:-$HOME/.config/nixpp/config.toml}"
-  local aws_credentials="${AWS_SHARED_CREDENTIALS_FILE:-$HOME/.aws/credentials}"
 
   info "Downloading $description; transfer progress appears when available"
-  if [[ -r "$nixpp_config" && -r "$aws_credentials" ]]
-  then
-    if "$tmpdir/nixpp" fetch \
-      --store-path "$store_path" \
-      --destination "$destination"
-    then
-      success "$description downloaded and verified from the configured S3 cache"
-      return 0
-    fi
-    info 'Direct S3 fetch failed; using the authenticated bootstrap mirror.'
-  else
-    info 'Direct S3 config or credentials are not installed yet; using the authenticated bootstrap mirror.'
-  fi
-
-  if ! "$tmpdir/nixpp" fetch \
-    --cache "$nixpp_cache_url" \
+  if ! NIXPP_CONFIG="$tmpdir/nixpp-bootstrap.toml" "$tmpdir/nixpp" fetch \
     --store-path "$store_path" \
     --destination "$destination" \
-    --netrc-file "$tmpdir/netrc" \
-    --public-key "$nixpp_cache_public_key"
+    --public-key "$nixpp_s3_public_key"
   then
     fail "Could not download or verify $description."
-    info 'Check the network and Bitwarden access; the current package tree is still active.'
+    info 'Check the network, Bitwarden access, and Niks3 cache credentials; the current package tree is still active.'
     return 1
   fi
-  success "$description downloaded and verified"
+  success "$description downloaded and verified from the Niks3 S3 cache"
+}
+
+download_s3_object() {
+  local description="$1"
+  local destination="$2"
+  local object_name="$3"
+  local access_key secret_key
+
+  if ! access_key=$("$RBW_BIN" get --exact "$nixpp_s3_credentials_item" -f username) ||
+    ! secret_key=$("$RBW_BIN" get --exact "$nixpp_s3_credentials_item" -f password)
+  then
+    unset access_key secret_key
+    fail "Could not read Niks3 credentials from Bitwarden to download $description."
+    info "Check the Bitwarden item named '$nixpp_s3_credentials_item'."
+    return 1
+  fi
+
+  if ! {
+    printf 'aws-sigv4 = "aws:amz:default:s3"\n'
+    printf 'user = "%s:%s"\n' "$access_key" "$secret_key"
+  } | curl -qfsSL --config - -o "$destination" \
+    "${nixpp_s3_base_url}/${object_name}"
+  then
+    unset access_key secret_key
+    fail "Could not download $description from the Niks3 S3 cache."
+    return 1
+  fi
+  unset access_key secret_key
+}
+
+write_nixpp_bootstrap_config() {
+  local config="$tmpdir/nixpp-bootstrap.toml"
+
+  cat > "$config" <<EOF
+[defaults]
+substituter = "$nixpp_s3_substituter"
+public_keys = ["$nixpp_s3_public_key"]
+aws_credentials_command = ["rbw", "get", "--raw", "--exact", "nixpp Niks3 cache"]
+EOF
+  chmod 0600 "$config"
 }
 
 progress_bar() {
@@ -255,6 +256,11 @@ require_bootstrap_tools() {
       return 1
     fi
   done
+  if ! curl --help all | grep -q -- '--aws-sigv4'
+  then
+    fail 'The installed Termux curl does not support AWS SigV4 requests.'
+    return 1
+  fi
 }
 
 install_rbw() {
@@ -758,11 +764,12 @@ main() {
   login_rbw
   success 'Bitwarden is unlocked'
 
-  step 'Connect to your private download cache'
+  step 'Connect to the Niks3 S3 cache'
   mkdir -p "$HOME/.cache"
   chmod 0700 "$HOME/.cache"
   tmpdir=$(mktemp -d "${HOME}/.cache/yadm-init-environment.XXXXXXXX")
   chmod 0700 "$tmpdir"
+  write_nixpp_bootstrap_config
   stage_prefix="${files_dir}/usr.bootstrap-new"
   if [[ -e "$stage_prefix" ]]
   then
@@ -770,30 +777,10 @@ main() {
     return 1
   fi
 
-  if ! password=$("$RBW_BIN" get "$bw_item" -f password)
+  info 'Reading the Termux channel manifest from Niks3'
+  if ! download_s3_object 'the Termux channel manifest' \
+    "$tmpdir/$nixpp_channel_name" "$nixpp_channel_name"
   then
-    fail 'Could not read the private-download password from Bitwarden.'
-    info "Unlock rbw and check the Bitwarden item named '$bw_item'."
-    return 1
-  fi
-  if [[ ! "$password" =~ ^[[:alnum:]]{32,}$ ]]
-  then
-    unset password
-    printf 'Bitwarden item has no supported password; expected at least 32 alphanumeric characters\n' >&2
-    return 1
-  fi
-
-  printf 'machine blobs.brkn.lol login %s password %s\n' "$bw_username" "$password" > "$tmpdir/netrc"
-  chmod 0600 "$tmpdir/netrc"
-  unset password
-
-  info 'Checking your private download access'
-  if ! curl -qfsSL --netrc-file "$tmpdir/netrc" \
-    -o "$tmpdir/$nixpp_channel_name" \
-    "${blobs_base_url}/private/termux/${nixpp_channel_name}"
-  then
-    fail 'Could not reach the private download channel.'
-    info 'Check your network and Bitwarden download credentials, then rerun the command.'
     return 1
   fi
   if ! read_cache_channel "$tmpdir/$nixpp_channel_name"
@@ -803,11 +790,12 @@ main() {
   fi
 
   info 'Downloading the small cache verifier'
-  download_file 'the cache verifier' "$tmpdir/netrc" "$tmpdir/nixpp" \
-    "${blobs_base_url}/private/termux/${nixpp_binary_name}"
-  curl -qfsSL --netrc-file "$tmpdir/netrc" \
-    -o "$tmpdir/nixpp.sha256" \
-    "${blobs_base_url}/private/termux/${nixpp_binary_name}.sha256"
+  if ! download_s3_object 'the cache verifier' "$tmpdir/nixpp" "$nixpp_binary_name" ||
+    ! download_s3_object 'the cache verifier checksum' "$tmpdir/nixpp.sha256" \
+      "${nixpp_binary_name}.sha256"
+  then
+    return 1
+  fi
   nixpp_sha256=$(awk 'NR == 1 { print $1 }' "$tmpdir/nixpp.sha256")
   if [[ ! "$nixpp_sha256" =~ ^[[:xdigit:]]{64}$ ]] ||
     ! printf '%s  %s\n' "$nixpp_sha256" "$tmpdir/nixpp" | sha256sum --check --status -
@@ -876,7 +864,7 @@ main() {
   mkdir -p "$files_dir"
   mkdir -m 0700 "$stage_prefix"
   progress_bar 'Preparing Termux packages' tar -xzf "$prefix_archive" --strip-components=1 -C "$stage_prefix"
-  rm -f -- "$tmpdir/netrc" "$tmpdir/nixpp" "$tmpdir/nixpp.sha256" "$tmpdir/$nixpp_channel_name"
+  rm -f -- "$tmpdir/nixpp" "$tmpdir/nixpp.sha256" "$tmpdir/$nixpp_channel_name"
   write_swap_helper "$tmpdir/swap-prefix.sh"
   trap - EXIT
   step 'Switch to the prepared Termux environment'
