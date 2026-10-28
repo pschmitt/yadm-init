@@ -4,14 +4,16 @@ Install the official Termux app, open it once, and wait until you reach its
 shell prompt. Then paste this command **inside the Termux app**:
 
 ```sh
-curl -L yadm.brkn.lol | bash -s -- --nixpp
+curl -fsSL yadm.brkn.lol | bash
 ```
 
-Use `--nixpp` to download and verify the signed APT prefix and managed Zsh
-generation for the detected device before replacing the Termux package tree.
+Termux now uses nixpp by default. The initializer downloads and verifies the
+signed APT prefix and managed Zsh generation for the detected device before
+replacing the Termux package tree. Pass `--legacy` to use the original setup
+flow instead.
 The current profiles cover Mi Pad 4 (`mp4`), Zenfone 10 (`zf10`), and Lenovo
 Tab P11 (`p11`). Then run the existing yadm clone and bootstrap.
-The ordinary `curl -L yadm.brkn.lol | bash` path for other hosts is unchanged.
+The ordinary setup flow for non-Termux hosts is unchanged.
 Both paths use Philipp's `pschmitt/rbw` fork rather than the official `bw`
 CLI. On non-Termux hosts, an existing `rbw` is reused only if it exposes the
 fork-specific `termux` command; otherwise yadm-init downloads the fork release.
@@ -33,7 +35,7 @@ type. When the setup finishes, it opens Zsh. Type `exit` to return to Termux.
 To disable color while keeping the same progress messages:
 
 ```sh
-curl -L yadm.brkn.lol | NO_COLOR=1 bash -s -- --nixpp
+curl -fsSL yadm.brkn.lol | NO_COLOR=1 bash
 ```
 
 ## Options
@@ -42,7 +44,7 @@ curl -L yadm.brkn.lol | NO_COLOR=1 bash -s -- --nixpp
 bootstrapping yadm. It still replaces the Termux package tree:
 
 ```sh
-curl -L yadm.brkn.lol | bash -s -- --nixpp --archive-only
+curl -fsSL yadm.brkn.lol | bash -s -- --archive-only
 ```
 
 `--yes` skips the package-tree confirmation. Use it only when you intend to
@@ -50,7 +52,14 @@ replace the current Termux packages; Bitwarden still needs an interactive
 terminal:
 
 ```sh
-curl -L yadm.brkn.lol | bash -s -- --nixpp --yes
+curl -fsSL yadm.brkn.lol | bash -s -- --yes
+```
+
+Use `--legacy` to bypass nixpp and run the original Termux package and shell
+setup. Its existing options, including `--local` and `--host`, remain available:
+
+```sh
+curl -fsSL yadm.brkn.lol | bash -s -- --legacy
 ```
 
 For unattended runs, export `RBW_EMAIL`, `RBW_MASTER_PASSWORD`, and
@@ -61,7 +70,7 @@ unlocked `rbw` vault:
 export RBW_EMAIL="$(rbw get bitwarden.com -f username)"
 export RBW_MASTER_PASSWORD="$(rbw get bitwarden.com -f password)"
 export RBW_TOTP="$(rbw totp bitwarden.com)"
-curl -L yadm.brkn.lol | bash -s -- --nixpp --yes
+curl -fsSL yadm.brkn.lol | bash -s -- --yes
 unset RBW_MASTER_PASSWORD RBW_TOTP RBW_EMAIL
 ```
 
@@ -76,8 +85,9 @@ agent socket directory (derived from `TMPDIR`) pointed at the relocated old
 prefix during yadm setup. This avoids a second Bitwarden login prompt during a
 single `--nixpp` run.
 
-For help, pass `--nixpp --help`. `--no-color` is also available; setting
-`NO_COLOR` is usually more convenient for the `curl | bash` command.
+For help, pass `--help`. `--nixpp` remains available to select the default
+Termux setup explicitly; setting `NO_COLOR` or passing `--no-color` disables
+color.
 
 ## Recovery
 
@@ -89,7 +99,7 @@ For help, pass `--nixpp --help`. `--no-color` is also available; setting
   and yadm setup succeed. If yadm setup fails, the installer prints the backup
   path and exact commands to restore it.
 - `--archive-only` is useful for separating Termux archive installation from
-  yadm setup when troubleshooting.
+  yadm setup when troubleshooting. Use it without `--legacy`.
 
 ## What gets installed
 

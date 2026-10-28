@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
 usage() {
-  echo "Usage: $(basename "$0") [--nixpp [--archive-only] [--yes] [--no-color]] [--local DIR] [--host NAME] [BW_PASSWORD]"
-  echo "Optional environment variables: RBW_EMAIL, RBW_MASTER_PASSWORD, RBW_TOTP"
+  printf 'Usage: %s [--legacy | --nixpp] [--archive-only] [--yes] [--no-color] [--local DIR] [--host NAME] [BW_PASSWORD]\n' "$(basename "$0")"
+  printf 'Termux uses the nixpp setup by default; pass --legacy for the original setup.\n'
+  printf 'Optional environment variables: RBW_EMAIL, RBW_MASTER_PASSWORD, RBW_TOTP\n'
 }
 
 # Bash's own `read` builtin, not pinentry -- see unlock_rbw for why.
@@ -527,6 +528,12 @@ then
   then
     NIXPP_MODE=1
   fi
+  if command -v termux-info >/dev/null 2>&1
+  then
+    NIXPP_MODE=1
+  fi
+  nixpp_requested=0
+  legacy_requested=0
   nixpp_args=()
   nixpp_incompatible_args=0
 
@@ -538,7 +545,11 @@ then
         exit 0
         ;;
       --nixpp)
-        NIXPP_MODE=1
+        nixpp_requested=1
+        shift
+        ;;
+      --legacy)
+        legacy_requested=1
         shift
         ;;
       --archive-only | --yes | --no-color)
@@ -574,6 +585,20 @@ then
     esac
   done
 
+  if ((nixpp_requested && legacy_requested))
+  then
+    printf '%s\n' '--nixpp and --legacy cannot be used together' >&2
+    usage >&2
+    exit 2
+  fi
+  if ((legacy_requested))
+  then
+    NIXPP_MODE=0
+  elif ((nixpp_requested))
+  then
+    NIXPP_MODE=1
+  fi
+
   # This script is normally run as `curl ... | bash -s -- ...`, which leaves
   # stdin attached to curl's pipe. Reattach to a tty only after parsing so
   # help and argument errors work in non-interactive contexts too. rbw's
@@ -587,7 +612,7 @@ then
   then
     if ((nixpp_incompatible_args))
     then
-      echo "--nixpp cannot be combined with --local, --host, or a positional Bitwarden password" >&2
+      printf '%s\n' '--local, --host, and a positional Bitwarden password require --legacy' >&2
       usage >&2
       exit 2
     fi
@@ -616,7 +641,7 @@ then
 
   if ((${#nixpp_args[@]} > 0))
   then
-    echo 'Use --archive-only, --yes, and --no-color together with --nixpp' >&2
+    printf '%s\n' 'Use --archive-only, --yes, and --no-color with the nixpp setup, not --legacy' >&2
     usage >&2
     exit 2
   fi
