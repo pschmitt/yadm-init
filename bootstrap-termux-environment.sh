@@ -864,9 +864,10 @@ INSTALL_TERMUX_HOST_KEYS
   fi
 
   generation=$(readlink -f "$HOME/.local/share/termux-native/current")
-  if ! TERMUX_GENERATION="$generation" \
-    PATH="$generation/bin:$PATH" \
-    "$PREFIX/bin/bash" "$generation/setup-nixpp-cache.sh" "$generation"
+  if [[ -f "$generation/setup-nixpp-cache.sh" ]] &&
+    ! TERMUX_GENERATION="$generation" \
+      PATH="$generation/bin:$PATH" \
+      "$PREFIX/bin/bash" "$generation/setup-nixpp-cache.sh" "$generation"
   then
     unset YADM_TERMUX_ARCHIVE_READY
     unset YADM_INIT_NIXPP
