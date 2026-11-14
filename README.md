@@ -25,6 +25,31 @@ tree passes its startup checks. Keep Termux open on a reliable network; the
 measured cold run was about 11 minutes, though download speed and package
 updates can change that.
 
+## TermuxPP (`dev.pschmitt.termux`)
+
+The same command also works inside the TermuxPP fork. The bootstrap detects
+the app from `$PREFIX` (`/data/data/dev.pschmitt.termux/files/usr`) and takes a
+different path, because the fork's package tree carries custom packages and
+APT holds that the stock prefix archive would discard:
+
+- It does **not** replace the package tree and does not download a prefix
+  archive. The tree you have stays in place, with its `LD_PRELOAD` path
+  redirect and `PATH` untouched.
+- It reads the separate channel `termuxpp-nix-cache-aarch64-<host>-latest.manifest`.
+  That manifest needs `nixpp` and `native` outputs; a `prefix` output is
+  ignored.
+- The signed managed generation is verified exactly as for stock, then its
+  bootstrap installs the generation's missing APT packages with `pkg install`.
+- Before anything changes, the bootstrap saves the dpkg database, APT holds and
+  configuration, SSH host keys, `zshenv`, and the login shell target under
+  `~/../termuxpp-bootstrap-backup/<timestamp>/` (next to `home` and `usr`).
+  This directory is **kept** after a successful run; delete it when you no
+  longer need it.
+- After the install it checks that every held package is still held at the
+  same version. A lost hold is re-applied and the run fails.
+
+The stock path is unchanged. Any other `$PREFIX` is refused.
+
 ## What you will see
 
 The setup is shown as four numbered phases. Longer package and extraction
@@ -95,6 +120,8 @@ color.
   packages or downloads the archives.
 - If a download or integrity check fails, the current package tree is not
   replaced, and the installer has not changed the APT package database.
+- On TermuxPP the package state backup is retained after success and failure;
+  the package tree itself is never moved.
 - The installer keeps the previous package tree until the new Termux startup
   and yadm setup succeed. If yadm setup fails, the installer prints the backup
   path and exact commands to restore it.

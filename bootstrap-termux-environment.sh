@@ -2,13 +2,21 @@
 
 set -Eeuo pipefail
 
-export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+readonly stock_prefix='/data/data/com.termux/files/usr'
+readonly fork_prefix='/data/data/dev.pschmitt.termux/files/usr'
+export PREFIX="${PREFIX:-$stock_prefix}"
 export RBW_PROFILE='yadm-init'
 readonly nixpp_s3_base_url='https://s3.openstack.de-west-01.wiit-cloud.io/nix-cache-brkn-lol/termux-bootstrap'
 readonly nixpp_s3_credentials_item='nixpp Niks3 cache'
 readonly nixpp_binary_name='nixpp-aarch64-latest'
-readonly nixpp_channel_prefix='termux-nix-cache-aarch64'
+readonly nixpp_channel_prefix_stock='termux-nix-cache-aarch64'
+readonly nixpp_channel_prefix_fork='termuxpp-nix-cache-aarch64'
+nixpp_channel_prefix=''
 nixpp_channel_name=''
+# stock: official Termux app (replaces the package tree).
+# fork: TermuxPP, dev.pschmitt.termux (keeps its package tree).
+termux_flavor=''
+fork_backup_dir=''
 readonly nixpp_s3_substituter='s3://nix-cache-brkn-lol?endpoint=s3.openstack.de-west-01.wiit-cloud.io&region=default&scheme=https&profile=niks3&priority=30'
 readonly nixpp_s3_public_key_rofl10='rofl-10:vYRBSypcO/0NnPsDxgSELIcJotU/LmZ1f6vZUKUmty0='
 readonly nixpp_s3_public_key_rofl13='rofl-13:ESRCqy2jcftg690k98KSNqF6LgOqz1X7ZnXXE//WWD0='
@@ -174,11 +182,14 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Install the prepared Termux environment, then run the existing yadm initializer.
-This replaces the package tree under \$PREFIX; files in \$HOME are kept.
+In the official Termux app this replaces the package tree under \$PREFIX; files
+in \$HOME are kept. In TermuxPP (dev.pschmitt.termux) the existing package tree
+is kept: only the managed shell generation and its missing APT packages are
+installed, and held packages stay held.
 
 Options:
   --archive-only  Install the archives and open a fresh shell without yadm setup.
-  --yes           Skip the package-tree replacement confirmation.
+  --yes           Skip the confirmation prompt.
   --no-color      Disable colored output (also honors NO_COLOR).
   -h, --help      Show this help.
 
@@ -198,8 +209,15 @@ EOF
 confirm_prefix_replacement() {
   local answer
 
-  warn "This replaces the Termux package tree at $PREFIX."
-  info 'Your home directory is kept; the yadm initializer may update its own files afterward.'
+  if [[ "$termux_flavor" == fork ]]
+  then
+    warn "This keeps the TermuxPP package tree at $PREFIX and installs the managed shell generation."
+    info 'Missing APT packages are installed with apt; held packages are kept as they are.'
+    info 'A backup of the package state is retained; your home directory is kept.'
+  else
+    warn "This replaces the Termux package tree at $PREFIX."
+    info 'Your home directory is kept; the yadm initializer may update its own files afterward.'
+  fi
   if ((force_yes))
   then
     prefix_confirmed=1
@@ -220,7 +238,7 @@ confirm_prefix_replacement() {
   fi
   if [[ "${answer,,}" != y && "${answer,,}" != yes ]]
   then
-    info 'Cancelled. No package-tree changes were made.'
+    info 'Cancelled. No changes were made.'
     return 0
   fi
   prefix_confirmed=1
@@ -247,7 +265,14 @@ query_secret() {
 
 require_bootstrap_tools() {
   local command
-  for command in curl tar sha256sum xz
+  local -a required=(curl tar sha256sum xz)
+
+  if [[ "$termux_flavor" == fork ]]
+  then
+    # The fork keeps its own package tree, so APT and dpkg must already work.
+    required+=(pkg apt-mark dpkg-query)
+  fi
+  for command in "${required[@]}"
   do
     if ! command -v "$command" >/dev/null 2>&1
     then
@@ -407,14 +432,96 @@ read_cache_channel() {
     esac
   done < "$channel_file"
 
+  # The fork keeps its own package tree, so its channel needs no prefix output.
+  # One that carries it is tolerated, validated, and never downloaded.
   if [[ "$format" != 1 || "$architecture" != aarch64 ]] ||
     ! valid_store_path "$nixpp_store_path" ||
-    ! valid_store_path "$prefix_store_path" ||
-    ! valid_store_path "$native_store_path"
+    ! valid_store_path "$native_store_path" ||
+    {
+      [[ "$termux_flavor" != fork || -n "$prefix_store_path" ]] &&
+        ! valid_store_path "$prefix_store_path"
+    }
   then
     printf 'Cache channel is incomplete or targets an unsupported environment\n' >&2
     return 1
   fi
+}
+
+detect_termux_flavor() {
+  case "$PREFIX" in
+    "$stock_prefix")
+      termux_flavor=stock
+      nixpp_channel_prefix=$nixpp_channel_prefix_stock
+      ;;
+    "$fork_prefix")
+      termux_flavor=fork
+      nixpp_channel_prefix=$nixpp_channel_prefix_fork
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Save everything needed to recover the retained fork prefix before apt runs:
+# the dpkg database, APT holds and configuration, SSH host keys, and the login
+# shell. The directory is never deleted by this script.
+snapshot_fork_state() {
+  local prefix=$1 backup_root=$2
+  local stamp dir host_key
+  local -a host_keys=()
+
+  stamp=$(date -u +%Y%m%dT%H%M%SZ) || return
+  dir="$backup_root/$stamp"
+  mkdir -p "$backup_root" || return
+  chmod 0700 "$backup_root" || return
+  if ! mkdir -m 0700 "$dir"
+  then
+    printf 'Could not create the recovery backup directory: %s\n' "$dir" >&2
+    return 1
+  fi
+
+  if ! cp -p "${DPKG_ADMINDIR:-$prefix/var/lib/dpkg}/status" "$dir/dpkg-status" ||
+    ! apt-mark showhold | LC_ALL=C sort > "$dir/holds.txt" ||
+    ! dpkg-query -W -f='${Package}\t${Version}\n' | LC_ALL=C sort > "$dir/packages.tsv" ||
+    [[ ! -s "$dir/packages.tsv" ]]
+  then
+    rm -rf -- "$dir"
+    printf 'Could not record the current package state.\n' >&2
+    return 1
+  fi
+  if [[ -d "$prefix/etc/apt" ]] &&
+    ! tar -C "$prefix" -cf "$dir/etc-apt.tar" etc/apt
+  then
+    rm -rf -- "$dir"
+    return 1
+  fi
+  for host_key in "$prefix"/etc/ssh/ssh_host_*
+  do
+    [[ -e "$host_key" ]] && host_keys+=("etc/ssh/${host_key##*/}")
+  done
+  if ((${#host_keys[@]})) &&
+    ! tar -C "$prefix" -cf "$dir/ssh-host-keys.tar" "${host_keys[@]}"
+  then
+    rm -rf -- "$dir"
+    return 1
+  fi
+  if [[ -e "$prefix/etc/zshenv" ]]
+  then
+    cp -p "$prefix/etc/zshenv" "$dir/zshenv" || {
+      rm -rf -- "$dir"
+      return 1
+    }
+  fi
+  if [[ -L "$HOME/.termux/shell" ]]
+  then
+    readlink "$HOME/.termux/shell" > "$dir/termux-shell-target" || {
+      rm -rf -- "$dir"
+      return 1
+    }
+  fi
+  chmod -R go-rwx "$dir"
+  fork_backup_dir=$dir
 }
 
 cleanup() {
@@ -436,23 +543,21 @@ cleanup() {
   return "$exit_status"
 }
 
-write_swap_helper() {
-  local helper="$1"
-
-  cat > "$helper" <<'EOF'
+write_helper_stock_preamble() {
+  cat <<'EOF'
 #!/system/bin/sh
 
 set -eu
 
 unset LD_PRELOAD
 
-files_dir='/data/data/com.termux/files'
-prefix="$files_dir/usr"
 stage_prefix="$1"
 tmpdir="$2"
 run_yadm="$3"
 native_archive="$4"
 native_sha256="$5"
+files_dir="${7:?missing Termux files directory}"
+prefix="$files_dir/usr"
 backup="$files_dir/usr.bootstrap-backup"
 rbw_runtime_tmpdir="${6:-$prefix/tmp}"
 toybox='/system/bin/toybox'
@@ -462,6 +567,35 @@ case "$rbw_runtime_tmpdir" in
     rbw_runtime_tmpdir="$backup/${rbw_runtime_tmpdir#"$prefix"/}"
     ;;
 esac
+
+remove_tree() {
+  "$toybox" rm -rf "$@"
+}
+
+restore_previous() {
+  "$toybox" rm -rf "$prefix"
+  "$toybox" mv "$backup" "$prefix"
+  remove_tree "$tmpdir"
+  echo "$1; restored the previous package tree" >&2
+}
+
+report_previous_tree() {
+  echo "Your previous package tree is preserved at: $backup" >&2
+}
+
+print_restore_hint() {
+  echo 'To restore it from Termux, run:' >&2
+  echo "  /system/bin/toybox rm -rf '$prefix'" >&2
+  echo "  /system/bin/toybox mv '$backup' '$prefix'" >&2
+}
+
+verify_package_state() {
+  return 0
+}
+
+discard_previous() {
+  remove_tree "$backup"
+}
 
 if [ -e "$backup" ]; then
   echo "A previous prefix backup exists at $backup; refusing to replace it" >&2
@@ -510,28 +644,120 @@ second_stage_fallback="$PREFIX/etc/profile.d/01-termux-bootstrap-second-stage-fa
 if [ -f "$second_stage_fallback" ]; then
   echo 'Completing Termux first-run package setup.' >&2
   if ! "$PREFIX/bin/bash" -c '. "$PREFIX/etc/profile.d/01-termux-bootstrap-second-stage-fallback.sh"'; then
-    "$toybox" rm -rf "$prefix"
-    "$toybox" mv "$backup" "$prefix"
-    "$toybox" rm -rf "$tmpdir"
-    echo 'Termux first-run setup failed; restored the previous package tree' >&2
+    restore_previous 'Termux first-run setup failed'
     exit 1
   fi
 fi
 
-if ! "$PREFIX/bin/ssh-keygen" -A; then
-  "$toybox" rm -rf "$prefix"
-  "$toybox" mv "$backup" "$prefix"
-  "$toybox" rm -rf "$tmpdir"
-  echo 'Could not generate device-specific SSH host keys; restored the previous package tree' >&2
+EOF
+}
+
+# TermuxPP keeps its own package tree, LD_PRELOAD (the fork's path redirect),
+# and PATH. Nothing is moved, replaced, or unset here.
+write_helper_fork_preamble() {
+  cat <<'EOF'
+#!/system/bin/sh
+
+set -eu
+
+tmpdir="$2"
+run_yadm="$3"
+native_archive="$4"
+native_sha256="$5"
+files_dir="${7:?missing Termux files directory}"
+fork_backup="${8:?missing recovery backup directory}"
+prefix="$files_dir/usr"
+rbw_runtime_tmpdir="${6:-$prefix/tmp}"
+
+remove_tree() {
+  rm -rf "$@"
+}
+
+restore_previous() {
+  remove_tree "$tmpdir"
+  echo "$1; the package tree was kept in place" >&2
+  report_previous_tree
+}
+
+report_previous_tree() {
+  echo "Package state backup (dpkg database, APT holds and configuration, SSH host keys): $fork_backup" >&2
+}
+
+print_restore_hint() {
+  echo 'The package tree was not replaced; nothing needs to be moved back.' >&2
+}
+
+# apt must not have touched held packages, whatever it installed alongside.
+verify_package_state() {
+  holds_before="$fork_backup/holds.txt"
+  packages_before="$fork_backup/packages.tsv"
+  if [ ! -r "$holds_before" ] || [ ! -r "$packages_before" ]; then
+    echo "The package state backup is incomplete: $fork_backup" >&2
+    return 1
+  fi
+  holds_after=$("$PREFIX/bin/apt-mark" showhold) || return 1
+  state_ok=0
+  while IFS= read -r held; do
+    [ -n "$held" ] || continue
+    if ! printf '%s\n' "$holds_after" | grep -Fxq -- "$held"; then
+      echo "The APT hold on $held was lost; restoring it" >&2
+      "$PREFIX/bin/apt-mark" hold "$held" >/dev/null || true
+      state_ok=1
+    fi
+    version_before=$(awk -F '\t' -v name="$held" '$1 == name { print $2 }' "$packages_before")
+    version_after=$("$PREFIX/bin/dpkg-query" -W -f='${Version}' "$held" 2>/dev/null || true)
+    if [ "$version_before" != "$version_after" ]; then
+      echo "Held package $held changed from '$version_before' to '$version_after'" >&2
+      state_ok=1
+    fi
+  done < "$holds_before"
+  return "$state_ok"
+}
+
+discard_previous() {
+  echo "Package state backup retained at: $fork_backup" >&2
+  echo 'Remove it yourself once you no longer need it.' >&2
+}
+
+if [ "${PREFIX:-}" != "$prefix" ]; then
+  echo "Refusing to run: PREFIX is not $prefix" >&2
+  exit 1
+fi
+HOME="${HOME:-$files_dir/home}"
+TMPDIR="${TMPDIR:-$prefix/tmp}"
+export HOME TMPDIR
+cd "$HOME"
+
+if ! "$prefix/bin/bash" -c 'command -v dpkg-query >/dev/null && command -v apt-mark >/dev/null && command -v curl >/dev/null'; then
+  remove_tree "$tmpdir"
+  echo 'The TermuxPP package tree failed its startup check; nothing was changed' >&2
   exit 1
 fi
 
-if ! TERMUX_NATIVE_SKIP_SOPS_SETUP=1 \
+EOF
+}
+
+write_helper_tail() {
+  cat <<'EOF'
+if ! "$PREFIX/bin/ssh-keygen" -A; then
+  restore_previous 'Could not generate device-specific SSH host keys'
+  exit 1
+fi
+
+native_status=0
+TERMUX_NATIVE_SKIP_SOPS_SETUP=1 \
   "$PREFIX/bin/bash" "$tmpdir/native-package/bootstrap.sh" \
-  install "$native_archive" "$native_sha256"; then
-  "$toybox" rm -rf "$tmpdir"
+  install "$native_archive" "$native_sha256" || native_status=$?
+if ! verify_package_state; then
+  remove_tree "$tmpdir"
+  echo 'APT changed held packages while installing the managed generation.' >&2
+  report_previous_tree
+  exit 1
+fi
+if [ "$native_status" -ne 0 ]; then
+  remove_tree "$tmpdir"
   echo 'The package tree is active, but the managed Termux generation could not be installed.' >&2
-  echo "Your previous package tree is preserved at: $backup" >&2
+  report_previous_tree
   exit 1
 fi
 
@@ -546,12 +772,10 @@ if [ "$run_yadm" = 1 ]; then
     "$PREFIX/bin/bash" -lc 'set -euo pipefail; curl -fsSL y.brkn.lol -L | bash'; then
     unset YADM_TERMUX_ARCHIVE_READY
     unset YADM_INIT_NIXPP
-    "$toybox" rm -rf "$tmpdir"
+    remove_tree "$tmpdir"
     echo 'The Termux environment is installed, but yadm setup did not finish.' >&2
-    echo "Your previous package tree is preserved at: $backup" >&2
-    echo 'To restore it from Termux, run:' >&2
-    echo "  /system/bin/toybox rm -rf '$prefix'" >&2
-    echo "  /system/bin/toybox mv '$backup' '$prefix'" >&2
+    report_previous_tree
+    print_restore_hint
     exit 1
   fi
   unset YADM_TERMUX_ARCHIVE_READY
@@ -632,12 +856,10 @@ INSTALL_TERMUX_HOST_KEYS
   then
     unset YADM_TERMUX_ARCHIVE_READY
     unset YADM_INIT_NIXPP
-    "$toybox" rm -rf "$tmpdir"
+    remove_tree "$tmpdir"
     echo 'The Termux environment is installed, but SSH host keys could not be restored.' >&2
-    echo "Your previous package tree is preserved at: $backup" >&2
-    echo 'Restore the previous package tree from Termux with:' >&2
-    echo "  /system/bin/toybox rm -rf '$prefix'" >&2
-    echo "  /system/bin/toybox mv '$backup' '$prefix'" >&2
+    report_previous_tree
+    print_restore_hint
     exit 1
   fi
 
@@ -648,9 +870,9 @@ INSTALL_TERMUX_HOST_KEYS
   then
     unset YADM_TERMUX_ARCHIVE_READY
     unset YADM_INIT_NIXPP
-    "$toybox" rm -rf "$tmpdir"
+    remove_tree "$tmpdir"
     echo 'The Termux environment is installed, but Niks3 credentials could not be configured.' >&2
-    echo "Your previous package tree is preserved at: $backup" >&2
+    report_previous_tree
     exit 1
   fi
 
@@ -660,11 +882,30 @@ else
 fi
 
 unset RBW_BIN RBW_AGENT RBW_PROFILE
-"$toybox" rm -rf "$backup" "$tmpdir"
+discard_previous
+remove_tree "$tmpdir"
 echo 'Opening your Zsh session. Type exit to return to Termux.' >&2
 exec "$PREFIX/bin/zsh" -li
 EOF
+}
 
+write_swap_helper() {
+  local helper="$1"
+
+  {
+    write_helper_stock_preamble
+    write_helper_tail
+  } > "$helper"
+  chmod 0700 "$helper"
+}
+
+write_inplace_helper() {
+  local helper="$1"
+
+  {
+    write_helper_fork_preamble
+    write_helper_tail
+  } > "$helper"
   chmod 0700 "$helper"
 }
 
@@ -708,14 +949,18 @@ main() {
   fi
 
   banner
-  if [[ "$PREFIX" != /data/data/com.termux/files/usr ]]
+  if ! detect_termux_flavor
   then
     fail "Unexpected Termux prefix: $PREFIX"
-    info 'This release is built for the official Termux app with its standard package prefix.'
+    info "This release supports the official Termux app ($stock_prefix) and TermuxPP ($fork_prefix)."
     return 1
   fi
+  if [[ "$termux_flavor" == fork ]]
+  then
+    info 'Detected TermuxPP; its package tree is kept and only the managed generation is installed.'
+  fi
 
-  if [[ -e "$files_dir/usr.bootstrap-backup" ]]
+  if [[ "$termux_flavor" == stock && -e "$files_dir/usr.bootstrap-backup" ]]
   then
     fail 'A previous setup left the original package tree backed up.'
     info "Backup: $files_dir/usr.bootstrap-backup"
@@ -724,11 +969,16 @@ main() {
       "$PREFIX" "$files_dir/usr.bootstrap-backup" "$PREFIX" >&2
     return 1
   fi
-  if [[ -e "$files_dir/usr.bootstrap-new" ]]
+  if [[ "$termux_flavor" == stock && -e "$files_dir/usr.bootstrap-new" ]]
   then
     fail 'An interrupted setup left a staged package tree.'
     info 'The staged tree is inactive. Remove it in Termux, then retry:'
     printf '  /system/bin/toybox rm -rf %q\n' "$files_dir/usr.bootstrap-new" >&2
+    return 1
+  fi
+  if [[ "$termux_flavor" == fork && "${HOME:-}" != "$files_dir/home" ]]
+  then
+    fail "Unexpected home directory for TermuxPP: ${HOME:-unset}"
     return 1
   fi
 
@@ -770,11 +1020,14 @@ main() {
   tmpdir=$(mktemp -d "${HOME}/.cache/yadm-init-environment.XXXXXXXX")
   chmod 0700 "$tmpdir"
   write_nixpp_bootstrap_config
-  stage_prefix="${files_dir}/usr.bootstrap-new"
-  if [[ -e "$stage_prefix" ]]
+  if [[ "$termux_flavor" == stock ]]
   then
-    printf 'Refusing to overwrite an existing staged prefix: %s\n' "$stage_prefix" >&2
-    return 1
+    stage_prefix="${files_dir}/usr.bootstrap-new"
+    if [[ -e "$stage_prefix" ]]
+    then
+      printf 'Refusing to overwrite an existing staged prefix: %s\n' "$stage_prefix" >&2
+      return 1
+    fi
   fi
 
   info 'Reading the Termux channel manifest from Niks3'
@@ -806,14 +1059,18 @@ main() {
   chmod 0700 "$tmpdir/nixpp"
   "$tmpdir/nixpp" --help >/dev/null
 
-  fetch_cache_output 'the Termux package archive' \
-    "$prefix_store_path" "$tmpdir/prefix-package"
+  if [[ "$termux_flavor" == stock ]]
+  then
+    fetch_cache_output 'the Termux package archive' \
+      "$prefix_store_path" "$tmpdir/prefix-package"
+  fi
   fetch_cache_output 'the managed Termux shell generation' \
     "$native_store_path" "$tmpdir/native-package"
 
   prefix_archive="$tmpdir/prefix-package/share/termux/termux-prefix.tar.gz"
   native_archive="$tmpdir/native-package/environment.tar.gz"
-  if [[ ! -s "$prefix_archive" || ! -s "$native_archive" || ! -s "$tmpdir/native-package/SHA256SUMS" ]]
+  if [[ ! -s "$native_archive" || ! -s "$tmpdir/native-package/SHA256SUMS" ]] ||
+    [[ "$termux_flavor" == stock && ! -s "$prefix_archive" ]]
   then
     fail 'The signed Nix outputs do not contain the expected Termux archives'
     return 1
@@ -832,9 +1089,15 @@ main() {
     fail 'The managed generation archive checksum does not match'
     return 1
   fi
-  success 'Both archives passed signature and integrity checks'
+  if [[ "$termux_flavor" == stock ]]
+  then
+    success 'Both archives passed signature and integrity checks'
+  else
+    success 'The managed generation passed signature and integrity checks'
+  fi
 
-  if ! validate_archive_paths "$prefix_archive" prefix || ! validate_archive_paths "$native_archive" generation
+  if [[ "$termux_flavor" == stock ]] && ! validate_archive_paths "$prefix_archive" prefix ||
+    ! validate_archive_paths "$native_archive" generation
   then
     fail 'Downloaded Termux archive contains an unsafe path'
     return 1
@@ -860,6 +1123,30 @@ main() {
     success 'Encrypted SSH host keys are present in the generation'
   fi
 
+  if [[ "$termux_flavor" == fork ]]
+  then
+    step 'Back up the TermuxPP package state'
+    if ! snapshot_fork_state "$PREFIX" "$files_dir/termuxpp-bootstrap-backup"
+    then
+      fail 'Could not back up the TermuxPP package state; nothing was changed.'
+      return 1
+    fi
+    success "Package state saved to $fork_backup_dir"
+    rm -f -- "$tmpdir/nixpp" "$tmpdir/nixpp.sha256" "$tmpdir/$nixpp_channel_name"
+    write_inplace_helper "$tmpdir/install-generation.sh"
+    trap - EXIT
+    step 'Install the managed generation'
+    info 'The TermuxPP package tree stays in place; missing APT packages are installed and holds are verified.'
+    if [[ "$run_yadm" == 1 ]]
+    then
+      info 'Afterward, y.brkn.lol will clone your private yadm config and apply the Termux setup'
+    fi
+    success 'Ready to install the verified generation'
+    # The helper inherits PATH and LD_PRELOAD: the fork's path redirect stays on.
+    exec "$PREFIX/bin/sh" "$tmpdir/install-generation.sh" '' "$tmpdir" "$run_yadm" \
+      "$native_archive" "$native_sha256" "${TMPDIR:-$PREFIX/tmp}" "$files_dir" "$fork_backup_dir"
+  fi
+
   step 'Prepare the new environment'
   mkdir -p "$files_dir"
   mkdir -m 0700 "$stage_prefix"
@@ -874,7 +1161,7 @@ main() {
     info 'After the switch, y.brkn.lol will clone your private yadm config and apply the Termux setup'
   fi
   success 'Ready to switch to the verified environment'
-  exec /system/bin/sh "$tmpdir/swap-prefix.sh" "$stage_prefix" "$tmpdir" "$run_yadm" "$native_archive" "$native_sha256" "${TMPDIR:-$PREFIX/tmp}"
+  exec /system/bin/sh "$tmpdir/swap-prefix.sh" "$stage_prefix" "$tmpdir" "$run_yadm" "$native_archive" "$native_sha256" "${TMPDIR:-$PREFIX/tmp}" "$files_dir"
 }
 
 if [[ "${BASH_SOURCE[0]:-}" == "$0" || -z "${BASH_SOURCE[0]:-}" ]]
