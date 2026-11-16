@@ -453,7 +453,17 @@ yadm_set_local_classes() {
     return 0
   fi
 
-  classes_to_add+=(termux)
+  if [[ "${TERMUX_APP__DATA_DIR:-}" == /data/data/dev.pschmitt.termux || "${PREFIX:-}" == /data/data/dev.pschmitt.termux/files/usr ]]
+  then
+    classes_to_add+=(termuxpp)
+    classes="$(bash "$yadm_bin" config --get-all local.class 2>/dev/null || true)"
+    if grep -Fqx -- termux <<< "$classes"
+    then
+      bash "$yadm_bin" config --unset-all local.class '^termux$'
+    fi
+  else
+    classes_to_add+=(termux)
+  fi
   if ((NIXPP_MODE))
   then
     classes_to_add+=(nixpp)

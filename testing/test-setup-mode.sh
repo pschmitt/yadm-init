@@ -71,10 +71,18 @@ BOOTSTRAP
     chmod 700 "$HOME/.config/yadm/bootstrap"
     ;;
   config)
-    if [[ "${2:-}" == --add ]]
-    then
-      printf '%s\n' "$4" >> "$YADM_TEST_CLASSES"
-    fi
+    case "${2:-}" in
+      --add)
+        printf '%s\n' "$4" >> "$YADM_TEST_CLASSES"
+        ;;
+      --get-all)
+        [[ -f "$YADM_TEST_CLASSES" ]] && cat "$YADM_TEST_CLASSES"
+        ;;
+      --unset-all)
+        grep -Fvx -- termux "$YADM_TEST_CLASSES" > "$YADM_TEST_CLASSES.tmp" || true
+        mv "$YADM_TEST_CLASSES.tmp" "$YADM_TEST_CLASSES"
+        ;;
+    esac
     ;;
   branch)
     ;;
@@ -102,7 +110,7 @@ new_case() {
   export YADM_TEST_BOOTSTRAP="$CASE_DIR/bootstrap"
   export YADM_TEST_CLASSES="$CASE_DIR/classes"
   export PATH="$fake_bin:$PATH"
-  unset LOCAL_REPO YADM_HOST YADM_INIT_NIXPP YADM_TERMUX_ARCHIVE_READY
+  unset LOCAL_REPO YADM_HOST YADM_INIT_NIXPP YADM_TERMUX_ARCHIVE_READY TERMUX_APP__DATA_DIR PREFIX
 }
 
 assert_file_contains() {
@@ -141,6 +149,20 @@ then
   exit 1
 fi
 printf '%s\n' 'PASS --legacy retains the original yadm path'
+
+new_case termuxpp_class
+mkdir -p "$CASE_DIR/local-repo"
+printf '%s\n' termux custom > "$YADM_TEST_CLASSES"
+export TERMUX_APP__DATA_DIR=/data/data/dev.pschmitt.termux
+bash "$script_dir/init.sh" --legacy --local "$CASE_DIR/local-repo"
+assert_file_contains "$YADM_TEST_CLASSES" termuxpp
+assert_file_contains "$YADM_TEST_CLASSES" custom
+if grep -Fqx -- termux "$YADM_TEST_CLASSES"
+then
+  printf 'The old Termux class was not removed\n' >&2
+  exit 1
+fi
+printf '%s\n' 'PASS TermuxPP migrates the old class without removing others'
 
 new_case conflicting_modes
 if bash "$script_dir/init.sh" --legacy --nixpp >"$CASE_DIR/output" 2>&1
