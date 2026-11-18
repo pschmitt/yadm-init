@@ -137,6 +137,41 @@ assert_file_contains "$YADM_TEST_ARGS" --yes
 assert_file_contains "$YADM_TEST_ARGS" --no-color
 printf '%s\n' 'PASS --nixpp forwards nixpp options'
 
+new_case full_nix
+export PREFIX="$CASE_DIR/prefix"
+mkdir -p "$PREFIX/bin"
+cat > "$PREFIX/bin/nixpp" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+if [[ ${2:-} == --help ]]
+then
+  exit 0
+fi
+printf '%s\n' "$@" > "$YADM_TEST_ARGS"
+staging="${!#}"
+for name in id_ed25519 id_ed25519.pub ssh_config known_hosts nix.conf rbw_config
+do
+  test -s "$staging/$name"
+  test "$(stat -c %a "$staging/$name")" = 600
+done
+printf '%s\n' "$staging" > "$YADM_TEST_MODE"
+EOF
+cat > "$CASE_DIR/rbw" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  unlocked) exit 0 ;;
+  get) printf '%s\n' fixture ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod 700 "$PREFIX/bin/nixpp" "$CASE_DIR/rbw"
+RBW_BIN="$CASE_DIR/rbw" RBW_AGENT="$CASE_DIR/rbw" bash "$script_dir/init.sh"
+assert_file_contains "$YADM_TEST_ARGS" bootstrap
+assert_file_contains "$YADM_TEST_ARGS" zf10
+assert_file_contains "$YADM_TEST_ARGS" pschmitt
+test ! -e "$(cat "$YADM_TEST_MODE")"
+printf '%s\n' 'PASS full-Nix TermuxPP hands credentials to nixpp and cleans up'
+
 new_case legacy
 mkdir -p "$CASE_DIR/local-repo"
 bash "$script_dir/init.sh" --legacy --local "$CASE_DIR/local-repo"

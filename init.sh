@@ -335,6 +335,46 @@ get_ssh_key() {
   fi
 }
 
+# Full-Nix TermuxPP has its own installer. Use rbw only for enrollment
+# inputs, then leave remote builds and configuration activation to nixpp.
+enroll_full_nix() (
+  umask 077
+  local host="$1"
+  local staging ssh_item enrollment_item field destination
+
+  install_rbw || return 1
+  login_rbw || return 1
+
+  staging=$(mktemp -d "${TMPDIR:-$PREFIX/tmp}/nixpp-enrollment.XXXXXXXX") || return 1
+  trap 'rm -rf -- "$staging"' EXIT
+  ssh_item="pschmitt@${host}"
+  enrollment_item="${YADM_NIXPP_ITEM:-nixpp-enrollment-${host}}"
+  "$RBW_BIN" get "$ssh_item" -f private_key >"$staging/id_ed25519" || return 1
+  "$RBW_BIN" get "$ssh_item" -f public_key >"$staging/id_ed25519.pub" || return 1
+
+  for field in ssh_config known_hosts nix_config rbw_config
+  do
+    destination="$field"
+    if [[ "$field" == nix_config ]]
+    then
+      destination=nix.conf
+    fi
+    "$RBW_BIN" get "$enrollment_item" -f "$field" >"$staging/$destination" || return 1
+  done
+  if "$RBW_BIN" get "$enrollment_item" -f age_key >"$staging/age_key" 2>/dev/null &&
+    [[ -s "$staging/age_key" ]]
+  then
+    chmod 600 "$staging/age_key" || return 1
+  else
+    rm -f "$staging/age_key" || return 1
+  fi
+
+  "$PREFIX/bin/nixpp" bootstrap \
+    --host "$host" --user "${YADM_NIXPP_USER:-pschmitt}" \
+    --flake "${YADM_NIXPP_FLAKE:-github:pschmitt/nixos-config?ref=agent/full-nix-hosts}" \
+    --credentials "$staging"
+)
+
 # Maps a Termux device's Android codename (getprop ro.product.device) to the
 # short hostname its Bitwarden items are named after (pschmitt@<host>).
 # `hostname`/$HOSTNAME on Android returns nothing usable (see --host's help),
@@ -643,6 +683,27 @@ then
       exit 1
     fi
     export YADM_HOST
+
+    if [[ -n "${PREFIX:-}" && -x "$PREFIX/bin/nixpp" ]] &&
+      "$PREFIX/bin/nixpp" bootstrap --help >/dev/null 2>&1
+    then
+      if [[ "$YADM_HOST" != zf10 && "$YADM_HOST" != p11 ]]
+      then
+        printf 'No full-Nix guest configuration for %s\n' "$YADM_HOST" >&2
+        exit 2
+      fi
+      for option in "${nixpp_args[@]}"
+      do
+        if [[ "$option" == --archive-only ]]
+        then
+          printf '%s\n' '--archive-only applies only to the legacy native bundle' >&2
+          exit 2
+        fi
+      done
+      export RBW_PROFILE=yadm-init
+      enroll_full_nix "$YADM_HOST"
+      exit $?
+    fi
 
     set -o pipefail
     curl -fsSL https://raw.githubusercontent.com/pschmitt/yadm-init/main/bootstrap-termux-environment.sh |

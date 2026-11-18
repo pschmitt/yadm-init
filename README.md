@@ -50,6 +50,30 @@ APT holds that the stock prefix archive would discard:
 
 The stock path is unchanged. Any other `$PREFIX` is refused.
 
+## Full-Nix TermuxPP enrollment
+
+In a native TermuxPP failsafe session, with the other terminal sessions closed,
+run the normal setup command. If the installed native `nixpp` supports
+`bootstrap`, yadm-init detects the profile, unlocks rbw, retrieves the phone's
+SSH identity and enrollment configuration, and hands over to nixpp. The
+legacy native bundle path remains available on older APKs.
+
+Prepare one Bitwarden item named `nixpp-enrollment-HOST` with these fields:
+
+| Field | Contents |
+| --- | --- |
+| `ssh_config` | Guest SSH configuration for the configured Nix builder |
+| `known_hosts` | Pinned builder SSH host keys |
+| `nix_config` | Guest `nix.conf` with the builder and read-only flake/cache access |
+| `rbw_config` | Personal rbw `config.json` with account settings |
+| `age_key` | Optional age identity for the guest's SOPS declarations |
+
+The host SSH key is the existing per-host Bitwarden SSH entry. Temporary
+credential files are removed after the handoff. Use `YADM_NIXPP_ITEM`,
+`YADM_NIXPP_USER`, or `YADM_NIXPP_FLAKE` to select another enrollment item,
+guest username, or flake. Open a new TermuxPP session when nixpp reports that
+enrollment is complete.
+
 ## What you will see
 
 The setup is shown as four numbered phases. Longer package and extraction
