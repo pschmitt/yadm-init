@@ -351,23 +351,31 @@ clone_full_nix_dotfiles() {
     "$PREFIX/bin/nixpp" enter -- bash -c '
       set -euo pipefail
       umask 077
-      if yadm rev-parse --verify HEAD >/dev/null 2>&1
+      if ! yadm rev-parse --verify HEAD >/dev/null 2>&1
       then
-        echo "The guest already has a yadm checkout."
-        exit 0
+        staging=$(mktemp -d /tmp/yadm-init.XXXXXXXX)
+        trap '"'"'rm -rf -- "$staging"'"'"' EXIT
+        tar -xf - -C "$staging"
+        export GIT_CONFIG_COUNT=2
+        export GIT_CONFIG_KEY_0=yadm.auto-alt GIT_CONFIG_VALUE_0=false
+        export GIT_CONFIG_KEY_1=yadm.auto-perms GIT_CONFIG_VALUE_1=false
+        printf -v GIT_SSH_COMMAND "ssh -F /dev/null -oBatchMode=yes -oIdentitiesOnly=yes -oStrictHostKeyChecking=yes -oHostKeyAlias=ssh.github.com -oUserKnownHostsFile=%q -i %q" \
+          "$staging/known_hosts" "$staging/deploy_key"
+        export GIT_SSH_COMMAND
+        yadm clone --no-bootstrap ssh://git@ssh.github.com:443/pschmitt/yadm-config.git
+        yadm config yadm.auto-alt false
+        yadm config local.hostname "$1"
       fi
-      staging=$(mktemp -d /tmp/yadm-init.XXXXXXXX)
-      trap '"'"'rm -rf -- "$staging"'"'"' EXIT
-      tar -xf - -C "$staging"
-      export GIT_CONFIG_COUNT=2
-      export GIT_CONFIG_KEY_0=yadm.auto-alt GIT_CONFIG_VALUE_0=false
-      export GIT_CONFIG_KEY_1=yadm.auto-perms GIT_CONFIG_VALUE_1=false
-      printf -v GIT_SSH_COMMAND "ssh -F /dev/null -oBatchMode=yes -oIdentitiesOnly=yes -oStrictHostKeyChecking=yes -oHostKeyAlias=ssh.github.com -oUserKnownHostsFile=%q -i %q" \
-        "$staging/known_hosts" "$staging/deploy_key"
-      export GIT_SSH_COMMAND
-      yadm clone --no-bootstrap ssh://git@ssh.github.com:443/pschmitt/yadm-config.git
-      yadm config yadm.auto-alt false
-      yadm config local.hostname "$1"
+      completion="$HOME/.config/zsh/completions/_yadm"
+      managed="$HOME/.nix-profile/share/zsh/site-functions/_yadm"
+      legacy="$HOME/.local/share/yadm.git/completion/zsh/_yadm"
+      if [[ -L "$completion" && ! -e "$completion" && -r "$managed" &&
+        "$(readlink "$completion")" == ../../../.local/share/yadm.git/completion/zsh/_yadm &&
+        ! -e "$legacy" && ! -L "$legacy" ]]
+      then
+        mkdir -p "${legacy%/*}"
+        ln -s "$managed" "$legacy"
+      fi
     ' yadm-init "$host"
 }
 
