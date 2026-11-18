@@ -52,8 +52,14 @@ The stock path is unchanged. Any other `$PREFIX` is refused.
 
 ## Full-Nix TermuxPP enrollment
 
-In a native TermuxPP failsafe session, with the other terminal sessions closed,
-run the normal setup command. If the installed native `nixpp` supports
+Close the other terminal sessions, open a TermuxPP failsafe session, then run:
+
+```sh
+"$PREFIX/bin/nixpp" native-shell
+curl -fsSL https://yadm.brkn.lol | bash
+```
+
+The first command opens a shell with the native TermuxPP prefix environment. If the installed native `nixpp` supports
 `bootstrap`, yadm-init detects the profile, unlocks rbw, retrieves the phone's
 SSH identity and enrollment configuration, and hands over to nixpp. The
 legacy native bundle path remains available on older APKs.
