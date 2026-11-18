@@ -79,7 +79,9 @@ guest rbw account and ongoing Nix builders. Temporary
 credential files are removed after the handoff. Use `YADM_NIXPP_ITEM`,
 `YADM_NIXPP_USER`, or `YADM_NIXPP_FLAKE` to select another enrollment item,
 guest username, or flake. Open a new TermuxPP session when nixpp reports that
-enrollment is complete.
+enrollment is complete. yadm-init clones the personal dotfiles after activation,
+keeps Home Manager-owned files, and skips the native bootstrap and automatic
+alternates in the managed guest.
 
 ## What you will see
 
