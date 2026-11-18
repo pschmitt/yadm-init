@@ -366,10 +366,6 @@ clone_full_nix_dotfiles() {
       fi
       yadm config yadm.auto-alt false
       yadm config local.hostname "$1"
-      if command -v termuxpp-yadm-configure >/dev/null
-      then
-        termuxpp-yadm-configure
-      fi
       completion="$HOME/.config/zsh/completions/_yadm"
       managed="$HOME/.nix-profile/share/zsh/site-functions/_yadm"
       legacy="$HOME/.local/share/yadm.git/completion/zsh/_yadm"
@@ -539,11 +535,10 @@ yadm_set_local_classes() {
 
   if [[ "${TERMUX_APP__DATA_DIR:-}" == /data/data/dev.pschmitt.termux || "${PREFIX:-}" == /data/data/dev.pschmitt.termux/files/usr ]]
   then
-    classes_to_add+=(termuxpp)
     classes="$(bash "$yadm_bin" config --get-all local.class 2>/dev/null || true)"
-    if grep -Fqx -- termux <<< "$classes"
+    if grep -Exq -- 'termux(pp)?' <<< "$classes"
     then
-      bash "$yadm_bin" config --unset-all local.class '^termux$'
+      bash "$yadm_bin" config --unset-all local.class '^termux(pp)?$'
     fi
   else
     classes_to_add+=(termux)

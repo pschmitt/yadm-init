@@ -79,7 +79,7 @@ BOOTSTRAP
         [[ -f "$YADM_TEST_CLASSES" ]] && cat "$YADM_TEST_CLASSES"
         ;;
       --unset-all)
-        grep -Fvx -- termux "$YADM_TEST_CLASSES" > "$YADM_TEST_CLASSES.tmp" || true
+        grep -Evx -- "$4" "$YADM_TEST_CLASSES" > "$YADM_TEST_CLASSES.tmp" || true
         mv "$YADM_TEST_CLASSES.tmp" "$YADM_TEST_CLASSES"
         ;;
     esac
@@ -182,21 +182,15 @@ esac
 EOF
 chmod 700 "$PREFIX/bin/nixpp" "$CASE_DIR/rbw"
 curl -o "$PREFIX/bin/yadm" https://example.invalid/yadm
-cat > "$PREFIX/bin/termuxpp-yadm-configure" <<'EOF'
-#!/usr/bin/env bash
-test -x "$HOME/.config/yadm/bootstrap"
-printf 'configured\n' >> "$YADM_TEST_CLASSES"
-EOF
-chmod 700 "$PREFIX/bin/termuxpp-yadm-configure"
 RBW_BIN="$CASE_DIR/rbw" RBW_AGENT="$CASE_DIR/rbw" bash "$script_dir/init.sh"
 assert_file_contains "$YADM_TEST_ARGS" bootstrap
 assert_file_contains "$YADM_TEST_ARGS" zf10
 assert_file_contains "$YADM_TEST_ARGS" pschmitt
 assert_file_contains "$YADM_TEST_BOOTSTRAP" deploy_key
 assert_file_contains "$YADM_TEST_BOOTSTRAP" known_hosts
-assert_file_contains "$YADM_TEST_CLASSES" configured
+test ! -e "$YADM_TEST_CLASSES"
 RBW_BIN="$CASE_DIR/rbw" RBW_AGENT="$CASE_DIR/rbw" bash "$script_dir/init.sh"
-test "$(grep -Fxc -- configured "$YADM_TEST_CLASSES")" = 2
+test ! -e "$YADM_TEST_CLASSES"
 test ! -e "$(cat "$YADM_TEST_MODE")"
 printf '%s\n' 'PASS full-Nix TermuxPP hands credentials to nixpp and cleans up'
 
@@ -215,17 +209,16 @@ printf '%s\n' 'PASS --legacy retains the original yadm path'
 
 new_case termuxpp_class
 mkdir -p "$CASE_DIR/local-repo"
-printf '%s\n' termux custom > "$YADM_TEST_CLASSES"
+printf '%s\n' termux termuxpp custom > "$YADM_TEST_CLASSES"
 export TERMUX_APP__DATA_DIR=/data/data/dev.pschmitt.termux
 bash "$script_dir/init.sh" --legacy --local "$CASE_DIR/local-repo"
-assert_file_contains "$YADM_TEST_CLASSES" termuxpp
 assert_file_contains "$YADM_TEST_CLASSES" custom
-if grep -Fqx -- termux "$YADM_TEST_CLASSES"
+if grep -Exq -- 'termux(pp)?' "$YADM_TEST_CLASSES"
 then
   printf 'The old Termux class was not removed\n' >&2
   exit 1
 fi
-printf '%s\n' 'PASS TermuxPP migrates the old class without removing others'
+printf '%s\n' 'PASS TermuxPP removes obsolete classes and preserves custom classes'
 
 new_case conflicting_modes
 if bash "$script_dir/init.sh" --legacy --nixpp >"$CASE_DIR/output" 2>&1
