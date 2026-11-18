@@ -363,8 +363,12 @@ clone_full_nix_dotfiles() {
           "$staging/known_hosts" "$staging/deploy_key"
         export GIT_SSH_COMMAND
         yadm clone --no-bootstrap ssh://git@ssh.github.com:443/pschmitt/yadm-config.git
-        yadm config yadm.auto-alt false
-        yadm config local.hostname "$1"
+      fi
+      yadm config yadm.auto-alt false
+      yadm config local.hostname "$1"
+      if command -v termuxpp-yadm-configure >/dev/null
+      then
+        termuxpp-yadm-configure
       fi
       completion="$HOME/.config/zsh/completions/_yadm"
       managed="$HOME/.nix-profile/share/zsh/site-functions/_yadm"

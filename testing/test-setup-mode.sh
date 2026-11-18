@@ -84,6 +84,9 @@ BOOTSTRAP
         ;;
     esac
     ;;
+  rev-parse)
+    test -x "$HOME/.config/yadm/bootstrap"
+    ;;
   branch)
     ;;
 esac
@@ -149,7 +152,12 @@ then
 fi
 if [[ $1 == enter ]]
 then
-  tar -tf - > "$YADM_TEST_BOOTSTRAP"
+  archive="$YADM_TEST_BOOTSTRAP.tar"
+  cat > "$archive"
+  export PATH="${0%/*}:$PATH"
+  shift 2
+  "$@" < "$archive"
+  tar -tf "$archive" > "$YADM_TEST_BOOTSTRAP"
   exit 0
 fi
 printf '%s\n' "$@" > "$YADM_TEST_ARGS"
@@ -173,12 +181,22 @@ case "$1" in
 esac
 EOF
 chmod 700 "$PREFIX/bin/nixpp" "$CASE_DIR/rbw"
+curl -o "$PREFIX/bin/yadm" https://example.invalid/yadm
+cat > "$PREFIX/bin/termuxpp-yadm-configure" <<'EOF'
+#!/usr/bin/env bash
+test -x "$HOME/.config/yadm/bootstrap"
+printf 'configured\n' >> "$YADM_TEST_CLASSES"
+EOF
+chmod 700 "$PREFIX/bin/termuxpp-yadm-configure"
 RBW_BIN="$CASE_DIR/rbw" RBW_AGENT="$CASE_DIR/rbw" bash "$script_dir/init.sh"
 assert_file_contains "$YADM_TEST_ARGS" bootstrap
 assert_file_contains "$YADM_TEST_ARGS" zf10
 assert_file_contains "$YADM_TEST_ARGS" pschmitt
 assert_file_contains "$YADM_TEST_BOOTSTRAP" deploy_key
 assert_file_contains "$YADM_TEST_BOOTSTRAP" known_hosts
+assert_file_contains "$YADM_TEST_CLASSES" configured
+RBW_BIN="$CASE_DIR/rbw" RBW_AGENT="$CASE_DIR/rbw" bash "$script_dir/init.sh"
+test "$(grep -Fxc -- configured "$YADM_TEST_CLASSES")" = 2
 test ! -e "$(cat "$YADM_TEST_MODE")"
 printf '%s\n' 'PASS full-Nix TermuxPP hands credentials to nixpp and cleans up'
 
