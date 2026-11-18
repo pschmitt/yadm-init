@@ -340,7 +340,7 @@ get_ssh_key() {
 enroll_full_nix() (
   umask 077
   local host="$1"
-  local staging ssh_item enrollment_item field destination
+  local staging ssh_item enrollment_item field
 
   install_rbw || return 1
   login_rbw || return 1
@@ -352,14 +352,9 @@ enroll_full_nix() (
   "$RBW_BIN" get "$ssh_item" -f private_key >"$staging/id_ed25519" || return 1
   "$RBW_BIN" get "$ssh_item" -f public_key >"$staging/id_ed25519.pub" || return 1
 
-  for field in ssh_config known_hosts nix_config rbw_config
+  for field in ssh_config known_hosts build_host
   do
-    destination="$field"
-    if [[ "$field" == nix_config ]]
-    then
-      destination=nix.conf
-    fi
-    "$RBW_BIN" get "$enrollment_item" -f "$field" >"$staging/$destination" || return 1
+    "$RBW_BIN" get "$enrollment_item" -f "$field" >"$staging/$field" || return 1
   done
   if "$RBW_BIN" get "$enrollment_item" -f age_key >"$staging/age_key" 2>/dev/null &&
     [[ -s "$staging/age_key" ]]
@@ -685,7 +680,7 @@ then
     export YADM_HOST
 
     if [[ -n "${PREFIX:-}" && -x "$PREFIX/bin/nixpp" ]] &&
-      "$PREFIX/bin/nixpp" bootstrap --help >/dev/null 2>&1
+          "$PREFIX/bin/nixpp" bootstrap --help >/dev/null 2>&1
     then
       if [[ "$YADM_HOST" != zf10 && "$YADM_HOST" != p11 ]]
       then

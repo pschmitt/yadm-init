@@ -70,11 +70,12 @@ Prepare one Bitwarden item named `nixpp-enrollment-HOST` with these fields:
 | --- | --- |
 | `ssh_config` | Guest SSH configuration for the configured Nix builder |
 | `known_hosts` | Pinned builder SSH host keys |
-| `nix_config` | Guest `nix.conf` with the builder and read-only flake/cache access |
-| `rbw_config` | Personal rbw `config.json` with account settings |
+| `build_host` | SSH alias for the initial build worker, which already has flake access |
 | `age_key` | Optional age identity for the guest's SOPS declarations |
 
-The host SSH key is the existing per-host Bitwarden SSH entry. Temporary
+The existing per-host Bitwarden SSH entry supplies the host key. yadm-init
+uses its existing rbw account setup for vault access. Home Manager configures the
+guest rbw account and ongoing Nix builders. Temporary
 credential files are removed after the handoff. Use `YADM_NIXPP_ITEM`,
 `YADM_NIXPP_USER`, or `YADM_NIXPP_FLAKE` to select another enrollment item,
 guest username, or flake. Open a new TermuxPP session when nixpp reports that

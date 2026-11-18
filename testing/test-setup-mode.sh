@@ -149,7 +149,7 @@ then
 fi
 printf '%s\n' "$@" > "$YADM_TEST_ARGS"
 staging="${!#}"
-for name in id_ed25519 id_ed25519.pub ssh_config known_hosts nix.conf rbw_config
+for name in id_ed25519 id_ed25519.pub ssh_config known_hosts build_host
 do
   test -s "$staging/$name"
   test "$(stat -c %a "$staging/$name")" = 600
@@ -160,7 +160,10 @@ cat > "$CASE_DIR/rbw" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
   unlocked) exit 0 ;;
-  get) printf '%s\n' fixture ;;
+  get)
+    [[ ${!#} != rbw_config ]] || exit 1
+    printf '%s\n' fixture
+    ;;
   *) exit 1 ;;
 esac
 EOF
