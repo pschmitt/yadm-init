@@ -162,11 +162,13 @@ then
 fi
 printf '%s\n' "$@" > "$YADM_TEST_ARGS"
 staging="${!#}"
-for name in id_ed25519 id_ed25519.pub ssh_config known_hosts build_host
+for name in id_ed25519 id_ed25519.pub ssh_config known_hosts build_host cache_credentials cache_store cache_public_keys
 do
   test -s "$staging/$name"
   test "$(stat -c %a "$staging/$name")" = 600
 done
+grep -Fxq 'aws_access_key_id = fixture' "$staging/cache_credentials"
+grep -Fxq 'aws_secret_access_key = fixture' "$staging/cache_credentials"
 printf '%s\n' "$staging" > "$YADM_TEST_MODE"
 EOF
 cat > "$CASE_DIR/rbw" <<'EOF'
@@ -186,6 +188,7 @@ RBW_BIN="$CASE_DIR/rbw" RBW_AGENT="$CASE_DIR/rbw" bash "$script_dir/init.sh"
 assert_file_contains "$YADM_TEST_ARGS" bootstrap
 assert_file_contains "$YADM_TEST_ARGS" zf10
 assert_file_contains "$YADM_TEST_ARGS" pschmitt
+assert_file_contains "$YADM_TEST_ARGS" github:pschmitt/nixos-config/main
 assert_file_contains "$YADM_TEST_BOOTSTRAP" deploy_key
 assert_file_contains "$YADM_TEST_BOOTSTRAP" known_hosts
 test ! -e "$YADM_TEST_CLASSES"
