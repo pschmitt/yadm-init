@@ -399,7 +399,9 @@ stage_nixpp_cache_credentials() {
   printf '%s\n' \
     's3://nix-cache-brkn-lol?endpoint=s3.openstack.de-west-01.wiit-cloud.io&region=default&scheme=https&profile=niks3' \
     >"$staging/cache_store" || return 1
-  printf '%s\n' 'nix-cache.brkn.lol:k/zdgSv+6lcJ/9DRILjA7H18eIlFSA0OwzyqqXEwySM=' \
+  printf '%s %s\n' \
+    'rofl-10:vYRBSypcO/0NnPsDxgSELIcJotU/LmZ1f6vZUKUmty0=' \
+    'nix-cache.brkn.lol:k/zdgSv+6lcJ/9DRILjA7H18eIlFSA0OwzyqqXEwySM=' \
     >"$staging/cache_public_keys"
 }
 
