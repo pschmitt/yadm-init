@@ -379,6 +379,30 @@ clone_full_nix_dotfiles() {
     ' yadm-init "$host"
 }
 
+stage_nixpp_cache_credentials() {
+  local staging="$1"
+  local access_key secret_key
+  local cache_item='nixpp Niks3 cache'
+
+  if ! access_key=$("$RBW_BIN" get --exact "$cache_item" -f username 2>/dev/null) ||
+    ! secret_key=$("$RBW_BIN" get --exact "$cache_item" -f password 2>/dev/null)
+  then
+    return 0
+  fi
+  if [[ -z "$access_key" || -z "$secret_key" ]]
+  then
+    return 0
+  fi
+
+  printf '[niks3]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
+    "$access_key" "$secret_key" >"$staging/cache_credentials" || return 1
+  printf '%s\n' \
+    's3://nix-cache-brkn-lol?endpoint=s3.openstack.de-west-01.wiit-cloud.io&region=default&scheme=https&profile=niks3' \
+    >"$staging/cache_store" || return 1
+  printf '%s\n' 'nix-cache.brkn.lol:k/zdgSv+6lcJ/9DRILjA7H18eIlFSA0OwzyqqXEwySM=' \
+    >"$staging/cache_public_keys"
+}
+
 # Full-Nix TermuxPP has its own installer. Use rbw only for enrollment
 # inputs, then leave remote builds and configuration activation to nixpp.
 enroll_full_nix() (
@@ -408,9 +432,11 @@ enroll_full_nix() (
     rm -f "$staging/age_key" || return 1
   fi
 
+  stage_nixpp_cache_credentials "$staging" || return 1
+
   "$PREFIX/bin/nixpp" bootstrap \
     --host "$host" --user "${YADM_NIXPP_USER:-pschmitt}" \
-    --flake "${YADM_NIXPP_FLAKE:-github:pschmitt/nixos-config?ref=agent/full-nix-hosts}" \
+    --flake "${YADM_NIXPP_FLAKE:-github:pschmitt/nixos-config/main}" \
     --credentials "$staging" || return 1
   clone_full_nix_dotfiles "$host" "$staging"
 )
