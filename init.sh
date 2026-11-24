@@ -198,6 +198,18 @@ install_rbw() {
     fi
   fi
 
+  # A failed earlier run leaves its download behind (only a successful run
+  # cleans up). Reuse it: its agent may still hold the unlocked vault, so a
+  # re-run skips the Bitwarden prompts instead of downloading again.
+  tmpdir="$(__get_tmpdir)"
+  if [[ -x "${tmpdir}/rbw" && -x "${tmpdir}/rbw-agent" ]]
+  then
+    RBW_BIN="${tmpdir}/rbw"
+    export RBW_AGENT="${tmpdir}/rbw-agent"
+    export PATH="${tmpdir}:${PATH}"
+    return 0
+  fi
+
   target="$(__rbw_release_target)"
   if [[ -z "$target" ]]
   then
@@ -205,7 +217,6 @@ install_rbw() {
     return 1
   fi
 
-  tmpdir="$(__get_tmpdir)"
   mkdir -p "$tmpdir"
 
   tag="$(curl -sI "https://github.com/pschmitt/rbw/releases/latest" |
@@ -267,6 +278,12 @@ login_rbw() {
   if "$RBW_BIN" unlocked 2>/dev/null
   then
     echo "Bitwarden is already unlocked" >&2
+    # The vault may have changed since the agent unlocked it (for example
+    # a new enrollment worker in nixpp-enrollment-<host>).
+    if ! "$RBW_BIN" sync
+    then
+      echo "Could not sync the Bitwarden vault; using the cached copy" >&2
+    fi
     return 0
   fi
 
