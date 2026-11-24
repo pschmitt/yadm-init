@@ -768,6 +768,24 @@ then
     fi
     export YADM_HOST
 
+    # nixpp now enrolls the phone itself (credentials from Bitwarden, build on a
+    # leased worker, dotfiles). This script only forwards to it.
+    if [[ -n "${PREFIX:-}" && -x "$PREFIX/bin/nixpp" ]] &&
+          "$PREFIX/bin/nixpp" setup --help >/dev/null 2>&1
+    then
+      for option in "${nixpp_args[@]}"
+      do
+        if [[ "$option" == --archive-only ]]
+        then
+          printf '%s\n' '--archive-only applies only to the legacy native bundle' >&2
+          exit 2
+        fi
+      done
+      printf '%s\n' \
+        'yadm-init --nixpp is deprecated: run nixpp setup --host HOST (or nixpp-setup) instead.' >&2
+      exec "$PREFIX/bin/nixpp" setup --host "$YADM_HOST" "$@"
+    fi
+
     if [[ -n "${PREFIX:-}" && -x "$PREFIX/bin/nixpp" ]] &&
           "$PREFIX/bin/nixpp" bootstrap --help >/dev/null 2>&1
     then
